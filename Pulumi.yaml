@@ -1,0 +1,5 @@
+name: psyamlpulumi
+runtime:
+  name: yaml
+  options:
+    compiler: pwsh -file ./powershell.ps1 -noninteractive
