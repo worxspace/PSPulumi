@@ -1,63 +1,57 @@
 using module ./pspulumi.psm1
+using module ./bin/aznativemodule.psm1
 
 pulumi {
 
-  $props = @{
-    pulumiid = "test"
-    name     = "MyResourceGroup"
-  }
-  $test = azresourcegroup @props
+  $location = , 'switzerlandnorth'#, 'westeurope'
 
-  $props = @{
-    pulumiid          = "teststorage"
-    name              = "ryanjantest1"
-    kind              = "StorageV2"
-    sku               = "Standard_LRS"
-    resourcegroupname = $test
-  }
-  $storage = azstorageaccount @props
+  $resourceGroup = azure_native_resources_resourcegroup -pulumiid "static-web-app" -resourceGroupName "static-web-app" -location $(get-random $location)
 
-  $props = @{
-    pulumiid          = "teststorage"
-    name              = "ryanjantest1"
-    kind              = "StorageV2"
-    sku               = @{
-      name = "Standard_LRS"
+  $Props = @{
+    pulumiid          = "sa"
+    accountName       = "pspulumistweb"
+    ResourceGroupName = $resourceGroup.reference("name")
+    location          = $(get-random $location)
+    Kind              = "StorageV2"
+    Sku               = @{
+      Name = "Standard_LRS"
     }
-    resourcegroupname = $test
   }
-  $storage = azstorageaccount @props
+  $storageAccount = azure_native_storage_storageaccount @Props
 
-  $props = @{
-    pulumiid          = "teststorage"
-    name              = "ryanjantest1"
-    kind              = "StorageV2"
-    sku               = storageaccountsku -name "standard_lrs"
-    resourcegroupname = $test
+  $Props = @{
+    pulumiid          = "website"
+    accountName       = $storageAccount.reference("name")
+    resourceGroupName = $resourceGroup.reference("name")
+    indexDocument     = "index.html"
+    error404Document  = "404.html"
   }
-  $storage = azstorageaccount @props
+  $website = azure_native_storage_storageaccountstaticwebsite @Props
 
-  azNativestorageStorageAccount -pulumiid test `
-    -name teststorage `
-    -kind storagev2 `
-    -sku [classname]@ { name = "bob" } `
-    -resourcegroupname (ref $test.name)
-
-  aznative_storage_storageaccount -sku $(aznative_type_storage_storageaccountsku -name [storagesku]::storagev2)
-
-  $sku = functioncall -name 
-  $saspolicy = ""
-  azNativestorageStorageAccount -pulumiid test `
-    -name teststorage `
-    -kind storagev2 `
-    -sku $sku `
-    -resourcegroupname (ref $test.name)
-
-  azNativestorageStorageAccount @{
-
+  "index.html", "404.html" | ForEach-Object {
+    $Props = @{
+      pulumiid          = $_
+      ResourceGroupName = $resourceGroup.reference("name")
+      AccountName       = $storageAccount.reference("name")
+      ContainerName     = $website.reference("containerName")
+      contentType       = "text/html"
+      Type              = "Block"
+      Source            = @{'Fn::FileAsset' = "./www/$_" }
+    }
+    $null = azure_native_storage_blob @Props
   }
-}
+  
+  $Props = @{
+    pulumiid          = "favicon.png"
+    ResourceGroupName = $resourceGroup.reference("name")
+    AccountName       = $storageAccount.reference("name")
+    ContainerName     = $website.reference("containerName")
+    contentType       = "image/png"
+    Type              = "Block"
+    Source            = @{'Fn::FileAsset' = "./www/favicon.png" }
+  }
+  $null = azure_native_storage_blob @Props
 
-function aznative/storage/storageaccount {
+  pulumi_output test $storageAccount.reference("primaryEndpoints.web")
 
 }

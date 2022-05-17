@@ -3,22 +3,24 @@ class pulumiprogram {
 
     [pscustomobject[]] $variables
 
-    [pscustomobject[]] $outputs
+    [hashtable] $outputs = @{}
 
     pulumiprogram () {
         $this.resources = @()
         $this.variables = @()
-        $this.outputs = @()
+        $this.outputs = @{}
     }
 
     [string] Execute() {
         $output = [pscustomobject]@{
             resources = @{}
+            variables = @{}
+            outputs = $this.outputs
         }
 
         $this.resources | % { $output.resources[$_.pspuluminame] = $_ | Select -property @{n = "type"; e = { $_.pspulumitype } }, properties }
 
-        return $output | ConvertTo-Json -Depth 99
+        return $output | ConvertTo-Yaml
     }
 }
 
@@ -56,18 +58,35 @@ function pulumi_generic_resource {
 
     $resource.properties = $properties
 
-    $script:resources += $resource
+    $global:pulumiresources += $resource
     return $resource
 }
 
+function pulumi_output {
+    param (
+        [parameter(mandatory = $true)]
+        [string]
+        $Name,
+
+        [parameter(mandatory = $true)]
+        [string]
+        $Value
+    )
+
+    $global:outputs += @{ $Name = $value }
+}
+
 function pulumi ([scriptblock]$scriptblock) {
-    $script:resources = @()
+    $global:pulumiresources = @()
+    $global:outputs = @{}
+    $global:functions = @()
 
     $null = $scriptblock.invoke()
 
     $program = [pulumiprogram]::new()
 
-    $program.resources += $script:resources
+    $program.resources += $global:pulumiresources
+    $program.outputs += $global:outputs
 
     $program.Execute()
 }

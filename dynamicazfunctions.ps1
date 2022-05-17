@@ -86,7 +86,7 @@ function Get-ClassPropertyText {
         if ($oneOfRefs.count -gt 1) {
             #TODO: bad practice fix
             $script:typeswithmultiplerefs["$className-$PropertyName"] = $oneOfRefs
-            return '[object] `${0} #todo add class here' -f $propertyName
+            return '[object] ${0} #todo add class here' -f $propertyName
         }
 
         $propertytypestring = Convert-PulumiTypeToPowerShellType -Type "$type"
@@ -335,20 +335,20 @@ function Add-FunctionDefinitionToModule {
         $Output += "`$resource = [pulumiresource]::new(`$pulumiid, `"$PulumiResource`")"
         $Output += ""
 
-        $resourcedefinition.requiredInputs | ForEach-Object {
-            $Output += "`$resourcedefinition.properties[`"$_`"] = `$$_"
+        $resourcedefinition.requiredInputs.where{-not [string]::IsNullOrEmpty($_)} | ForEach-Object {
+            $Output += "`$resource.properties[`"$_`"] = `$$_"
         }
 
         $Output += ""
 
         @($resourcedefinition.inputProperties.Keys).where{ $_ -notin $resourcedefinition.requiredInputs } | ForEach-Object {
-            $Output += "if(`$null -ne `$$_) {"
+            $Output += "if(`$PSBoundParameters.Keys -icontains '$_') {"
             $Output += "`$resource.properties[`"$_`"] = `$$_"
             $Output += "}"
             $Output += ""
         }
 
-        $Output += "`$script:resources += `$resource"
+        $Output += "`$global:pulumiresources += `$resource"
         $Output += "return `$resource"
         $Output += "}"
     
