@@ -1,3 +1,4 @@
+#requires -modules powershell-yaml
 class pulumiprogram {
     [pulumiresource[]] $resources
 
