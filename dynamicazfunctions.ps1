@@ -265,7 +265,7 @@ function Add-ClassDefinitionToModule {
     )
 
     process {
-        write-verbose "adding class $pulumitype in $SchemaObject"
+        write-verbose "adding class $pulumitype"
         $output = @()
         
         $typedefinition = $SchemaObject.types[$PulumiType]
@@ -307,8 +307,13 @@ function Add-FunctionDefinitionToModule {
     process {
         write-verbose "adding function $PulumiResource"
         $output = @()
-
+        
         $resourcedefinition = $SchemaObject.resources[$PulumiResource]
+        
+        if($null -eq $resourcedefinition.inputProperties) {
+            Write-Warning "resource $PulumiResource does not have any inputProperties"
+            return $null
+        }
 
         $functionName = ($PulumiResource -replace '-|:', '_').tolower()
 
