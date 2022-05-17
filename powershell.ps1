@@ -36,7 +36,7 @@ pulumi {
       ContainerName     = $website.reference("containerName")
       contentType       = "text/html"
       Type              = "Block"
-      Source            = @{'Fn::FileAsset' = "./www/$_" }
+      Source            = pulumi_file_asset "./www/$_"
     }
     $null = azure_native_storage_blob @Props
   }
@@ -48,7 +48,7 @@ pulumi {
     ContainerName     = $website.reference("containerName")
     contentType       = "image/png"
     Type              = "Block"
-    Source            = @{'Fn::FileAsset' = "./www/favicon.png" }
+    Source            = pulumi_file_asset "./www/favicon.png"
   }
   $null = azure_native_storage_blob @Props
 

@@ -15,10 +15,10 @@ class pulumiprogram {
         $output = [pscustomobject]@{
             resources = @{}
             variables = @{}
-            outputs = $this.outputs
+            outputs   = $this.outputs
         }
 
-        $this.resources | % { $output.resources[$_.pspuluminame] = $_ | Select -property @{n = "type"; e = { $_.pspulumitype } }, properties }
+        $this.resources.foreach{ $output.resources[$_.pspuluminame] = $_ | Select-Object -property @{n = "type"; e = { $_.pspulumitype } }, properties }
 
         return $output | ConvertTo-Json -Depth 99
     }
@@ -62,12 +62,97 @@ function pulumi_generic_resource {
     return $resource
 }
 
-function pulumi_output {
+function pulumi_asset {
+    param (
+        [parameter(mandatory = $true)]
+        [ValidateSet("String", "File", "Remote")]
+        [string]
+        $Type,
+
+        [parameter(mandatory = $true)]
+        [string]
+        $Value
+    )
+
+    return @{"Fn::$($Type)Asset" = $Value }
+}
+
+function pulumi_remote_asset {
     param (
         [parameter(mandatory = $true)]
         [string]
-        $Name,
+        $Value
+    )
 
+    return (pulumi_asset String $Value)
+}
+
+function pulumi_file_asset {
+    param (
+        [parameter(mandatory = $true)]
+        [string]
+        $Value
+    )
+
+    return (pulumi_asset File $Value)
+}
+
+function pulumi_string_asset {
+    param (
+        [parameter(mandatory = $true)]
+        [string]
+        $Value
+    )
+
+    return (pulumi_asset String $Value)
+}
+
+function pulumi_archive {
+    param (
+        [parameter(mandatory = $true)]
+        [ValidateSet("Asset", "File", "Remote")]
+        [string]
+        $Type,
+
+        [parameter(mandatory = $true)]
+        $Value
+    )
+
+    return @{"Fn::$($Type)Archive" = $Value }
+}
+
+function pulumi_remote_archive {
+    param (
+        [parameter(mandatory = $true)]
+        [string]
+        $Value
+    )
+
+    return (pulumi_archive Remote $Value)
+}
+
+function pulumi_file_archive {
+    param (
+        [parameter(mandatory = $true)]
+        [string]
+        $Value
+    )
+
+    return (pulumi_archive File $Value)
+}
+
+function pulumi_asset_archive {
+    param (
+        [parameter(mandatory = $true)]
+        [hashtable]
+        $Value
+    )
+
+    return (pulumi_archive Asset $Value)
+}
+
+function pulumi_output {
+    param (
         [parameter(mandatory = $true)]
         [string]
         $Value
