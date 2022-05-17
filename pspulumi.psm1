@@ -31,6 +31,10 @@ class pulumiresource {
         $this.pspuluminame = $name
         $this.pspulumitype = $type
     }
+
+    [string] reference ([string]$PropertyName) {
+        return "`${{0}.{1}}".Replace('{0}', $this.pspuluminame).Replace('{1}', $PropertyName)
+    }
 }
 
 function pulumi_generic_resource {

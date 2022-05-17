@@ -86,7 +86,7 @@ function Get-ClassPropertyText {
         if ($oneOfRefs.count -gt 1) {
             #TODO: bad practice fix
             $script:typeswithmultiplerefs["$className-$PropertyName"] = $oneOfRefs
-            return '#todo add class here `${0}' -f $propertyName
+            return '[object] `${0} #todo add class here' -f $propertyName
         }
 
         $propertytypestring = Convert-PulumiTypeToPowerShellType -Type "$type"
@@ -136,6 +136,7 @@ function Get-ClassPropertyText {
                 $refObject = $schema.types[$parts[-1]]
 
                 if ($null -ne $refObject.enum) {
+                    $propertytypestring = Convert-PulumiTypeToPowerShellType -Type $refObject.type
                     $validateset = $refObject.enum.value
                 }
                 else {
@@ -149,6 +150,7 @@ function Get-ClassPropertyText {
             $refObject = $schema.types[$parts[-1]]
 
             if ($null -ne $refObject.enum) {
+                $propertytypestring = Convert-PulumiTypeToPowerShellType -Type $refObject.type
                 $validateset = $refObject.enum.value
             }
         }
@@ -237,6 +239,7 @@ function Get-FunctionParameterText {
             $refObject = $schema.types[$parts[-1]]
 
             if ($null -ne $refObject.enum) {
+                $propertytypestring = Convert-PulumiTypeToPowerShellType -Type $refObject.type
                 $validateset = $refObject.enum.value
             }
         }
