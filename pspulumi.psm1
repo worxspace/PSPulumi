@@ -1,4 +1,3 @@
-#requires -modules powershell-yaml
 class pulumiprogram {
     [pulumiresource[]] $resources
 
@@ -21,7 +20,7 @@ class pulumiprogram {
 
         $this.resources | % { $output.resources[$_.pspuluminame] = $_ | Select -property @{n = "type"; e = { $_.pspulumitype } }, properties }
 
-        return $output | ConvertTo-Yaml
+        return $output | ConvertTo-Json -Depth 99
     }
 }
 
