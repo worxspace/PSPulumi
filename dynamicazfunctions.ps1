@@ -106,7 +106,14 @@ function Get-ClassPropertyText {
             else {
                 write-verbose "creating class for object $ref"
                 $parts = $ref -split '/'
-                $propertytypestring = "[{0}]" -f ($parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -ModuleFile $ModuleFile)
+                $refObject = $schema.types[$parts[-1]]
+                
+                if ($null -ne $refObject.enum) {
+                    $validateset = $refObject.enum.value
+                }
+                else {
+                    $propertytypestring = "[{0}]" -f ($parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -ModuleFile $ModuleFile)
+                }
             }
         }
 
@@ -126,7 +133,14 @@ function Get-ClassPropertyText {
             }
             else {
                 $parts = $ref -split '/'
-                $propertytypestring = "[{0}[]]" -f ($parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -ModuleFile $ModuleFile)
+                $refObject = $schema.types[$parts[-1]]
+
+                if ($null -ne $refObject.enum) {
+                    $validateset = $refObject.enum.value
+                }
+                else {
+                    $propertytypestring = "[{0}[]]" -f ($parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -ModuleFile $ModuleFile)
+                }
             }
         }
         
@@ -140,7 +154,7 @@ function Get-ClassPropertyText {
         }
 
         if ($null -ne $validateset) {
-            # $Output += "[ValidateSet({0})]" -f $($validateset.foreach{"'$_'"} -join ', ')
+            $Output += "[ValidateSet({0})]" -f $($validateset.foreach{ "'$_'" } -join ', ')
         }
 
         $Output += "$propertytypestring `${0}" -f $propertyName
@@ -263,21 +277,11 @@ function Add-ClassDefinitionToModule {
         }
         $script:classesToCreate += $classname
 
-        if ($null -ne $typedefinition.enum) {
-            $Output += "enum {0} {".replace("{0}", $className)
+        $Output += "class {0} {".replace("{0}", $className)
 
-            $Output += '{0}' -f $typedefinition.enum.value
+        $Output += $typedefinition.properties.Keys | Get-ClassPropertyText -TypeDefinition $typedefinition
 
-            $output += "}"
-        }
-        else {
-
-            $Output += "class {0} {".replace("{0}", $className)
-
-            $Output += $typedefinition.properties.Keys | Get-ClassPropertyText -TypeDefinition $typedefinition
-
-            $output += "}"
-        }
+        $output += "}"
 
         $fileContent = $output -join [system.environment]::newline
 
