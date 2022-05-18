@@ -1,20 +1,20 @@
 class pulumiprogram {
     [pulumiresource[]] $resources
 
-    [pscustomobject[]] $variables
+    [hashtable] $variables
 
-    [hashtable] $outputs = @{}
+    [hashtable] $outputs
 
     pulumiprogram () {
         $this.resources = @()
-        $this.variables = @()
+        $this.variables = @{}
         $this.outputs = @{}
     }
 
     [string] Execute() {
         $output = [pscustomobject]@{
             resources = @{}
-            variables = @{}
+            variables = $this.variables
             outputs   = $this.outputs
         }
 
@@ -155,16 +155,66 @@ function pulumi_output {
     param (
         [parameter(mandatory = $true)]
         [string]
+        $Name,
+
+        [parameter(mandatory = $true)]
+        [string]
         $Value
     )
 
     $global:outputs += @{ $Name = $value }
 }
 
+class pulumi_variable {
+    [string] $name
+
+    [object] $value
+
+    [string] reference ([string]$PropertyName) {
+        return "`${{0}{2}{1}}".Replace('{0}', $this.name).Replace('{1}', $PropertyName).replace("{2}", $(if($PropertyName[0] -ne '['){'.'}))
+    }
+
+    pulumi_variable ([string]$name, [object]$value) {
+        $this.name = $name
+        $this.value = $value
+    }
+}
+
+function pulumi_function {
+    param (
+        [parameter(mandatory)]
+        [string]
+        $name,
+        
+        [parameter(mandatory)]
+        [hashtable]
+        $arguments,
+        
+        [parameter(mandatory)]
+        [string]
+        $returnproperty,
+        
+        [parameter(mandatory)]
+        [string]
+        $variablename
+    )
+
+    $function = @{
+        "Fn::Invoke" = @{
+            Function = $name
+            Arguments = $arguments
+            return = $returnproperty
+        }
+    }
+
+    $global:variables += @{ $variablename = $function }
+    return [pulumi_variable]::new($variablename, $value)
+}
+
 function pulumi ([scriptblock]$scriptblock) {
     $global:pulumiresources = @()
     $global:outputs = @{}
-    $global:functions = @()
+    $global:variables = @{}
 
     $null = $scriptblock.invoke()
 
@@ -172,6 +222,7 @@ function pulumi ([scriptblock]$scriptblock) {
 
     $program.resources += $global:pulumiresources
     $program.outputs += $global:outputs
+    $program.variables += $global:variables
 
     $program.Execute()
 }

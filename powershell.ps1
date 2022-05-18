@@ -52,6 +52,15 @@ pulumi {
   }
   $null = azure_native_storage_blob @Props
 
+  $sakeys = pulumi_function -name azure-native:storage:listStorageAccountKeys `
+                          -arguments @{
+                            accountName = $storageAccount.reference("name")
+                            resourceGroupName = $resourceGroup.reference("name")
+                          } `
+                          -returnproperty keys `
+                          -variablename sakeys
+
   pulumi_output test $storageAccount.reference("primaryEndpoints.web")
+  pulumi_output primarykey $sakeys.reference("keys[0].value")
 
 }
