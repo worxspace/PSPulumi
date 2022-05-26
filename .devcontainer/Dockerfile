@@ -1,54 +1,43 @@
-FROM pulumi/pulumi
+# See here for image contents: https://github.com/microsoft/vscode-dev-containers/tree/v0.234.0/containers/alpine/.devcontainer/base.Dockerfile
 
-# Install golangci-lint
-RUN version=1.42.1 \
-    && curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /go/bin v$version \
-    && golangci-lint version
-
-# Install pulumictl
-RUN version=0.0.25 \
-    && curl -fsSLO https://github.com/pulumi/pulumictl/releases/download/v$version/pulumictl-v$version-linux-amd64.tar.gz \
-    && tar -xzf pulumictl-v$version-linux-amd64.tar.gz --directory /usr/local/bin --no-same-owner pulumictl \
-    && rm -f pulumictl-v$version-linux-amd64.tar.gz \
-    && pulumictl version
+# [Choice] Alpine version: 3.14, 3.13, 3.12, 3.11
+ARG VARIANT="3.15"
+FROM mcr.microsoft.com/vscode/devcontainers/base:0-alpine-${VARIANT}
 
 # Install pwsh
-RUN apt-get update \
-    # Install pre-requisite packages.
-    && apt-get install -y wget apt-transport-https software-properties-common \
-    # Download the Microsoft repository GPG keys 
-    && wget -q https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb \
-    # Register the Microsoft repository GPG keys
-    && dpkg -i packages-microsoft-prod.deb \
-    # Update the list of packages after we added packages.microsoft.com
-    && apt-get update \
-    # Install PowerShell
-    && apt-get install -y powershell
+RUN apk add --no-cache \
+    ca-certificates \
+    less \
+    ncurses-terminfo-base \
+    krb5-libs \
+    libgcc \
+    libintl \
+    libssl1.1 \
+    libstdc++ \
+    tzdata \
+    userspace-rcu \
+    zlib \
+    icu-libs \
+    curl \
+    git
 
-# Add non-root user
-ARG USER_NAME=user
-ARG USER_UID=1000
-ARG USER_GID=$USER_UID
+RUN apk -X https://dl-cdn.alpinelinux.org/alpine/edge/main add --no-cache \
+    lttng-ust
 
-RUN groupadd --gid $USER_GID $USER_NAME \
-    && useradd --uid $USER_UID --gid $USER_GID --shell /bin/bash -m $USER_NAME \
-    && mkdir -p /etc/sudoers.d \
-    && echo "$USER_NAME ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/$USER_NAME \
-    && chmod 0440 /etc/sudoers.d/$USER_NAME
+# Download the powershell '.tar.gz' archive
+RUN curl -L https://github.com/PowerShell/PowerShell/releases/download/v7.2.4/powershell-7.2.4-linux-alpine-x64.tar.gz -o /tmp/powershell.tar.gz
 
-RUN mkdir -p /go/bin \
-    && chown -R $USER_NAME: /go \
-    && mkdir -p $HOME/.pulumi/bin \
-    && chown -R $USER_NAME: $HOME/.pulumi
+# Create the target folder where powershell will be placed
+RUN mkdir -p /opt/microsoft/powershell/7
 
-USER $USER_NAME
+# Expand powershell to the target folder
+RUN tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/7
 
-# The base container sets XDG_CACHE_HOME XDG_CONFIG_HOME specifically for the root user, we can't unset them in a way that vscode will pick up, so we set them to values for the new user.
-# Installing go extensions via vscode use these paths so if we just leave it set to /root/.cache we'll get permission errors.
-ENV XDG_CONFIG_HOME=/home/$USER_NAME/.config
-ENV XDG_CACHE_HOME=/home/$USER_NAME/.cache
+# Set execute permissions
+RUN chmod +x /opt/microsoft/powershell/7/pwsh
 
-RUN echo "export PATH=$HOME/.pulumi:$HOME/.pulumi/bin:$GOPATH/bin:/usr/local/go/bin:$PATH" >> ~/.bashrc \
-    && echo "alias l='ls -aF'" >> ~/.bash_aliases \
-    && echo "alias ll='ls -ahlF'" >> ~/.bash_aliases \
-    && echo "alias ls='ls --color=auto --group-directories-first'" >> ~/.bash_aliases
+# Create the symbolic link that points to pwsh
+RUN ln -s /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh
+
+# Install pulumi
+RUN curl -fsSL https://get.pulumi.com | sh
