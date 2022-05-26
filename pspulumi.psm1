@@ -39,7 +39,8 @@ class pulumiresource {
     }
 }
 
-function pulumi_generic_resource {
+function New-PulumiGenericResource {
+    [Alias("pulumi_generic_resource")]
     param (
         [parameter(mandatory = $true)]
         [string]
@@ -62,7 +63,8 @@ function pulumi_generic_resource {
     return $resource
 }
 
-function pulumi_asset {
+function New-PulumiAsset {
+    [Alias("pulumi_asset")]
     param (
         [parameter(mandatory = $true)]
         [ValidateSet("String", "File", "Remote")]
@@ -77,7 +79,8 @@ function pulumi_asset {
     return @{"Fn::$($Type)Asset" = $Value }
 }
 
-function pulumi_remote_asset {
+function New-PulumiRemoteAsset {
+    [Alias("pulumi_remote_asset")]
     param (
         [parameter(mandatory = $true)]
         [string]
@@ -87,7 +90,8 @@ function pulumi_remote_asset {
     return (pulumi_asset String $Value)
 }
 
-function pulumi_file_asset {
+function New-PulumiFileAsset {
+    [Alias("pulumi_file_asset")]
     param (
         [parameter(mandatory = $true)]
         [string]
@@ -97,7 +101,8 @@ function pulumi_file_asset {
     return (pulumi_asset File $Value)
 }
 
-function pulumi_string_asset {
+function New-PulumiStringAsset {
+    [Alias("pulumi_string_asset")]
     param (
         [parameter(mandatory = $true)]
         [string]
@@ -107,7 +112,8 @@ function pulumi_string_asset {
     return (pulumi_asset String $Value)
 }
 
-function pulumi_archive {
+function New-PulumiArchive {
+    [Alias("pulumi_archive")]
     param (
         [parameter(mandatory = $true)]
         [ValidateSet("Asset", "File", "Remote")]
@@ -121,7 +127,8 @@ function pulumi_archive {
     return @{"Fn::$($Type)Archive" = $Value }
 }
 
-function pulumi_remote_archive {
+function New-PulumiRemoteArchive {
+    [Alias("pulumi_remote_archive")]
     param (
         [parameter(mandatory = $true)]
         [string]
@@ -131,7 +138,8 @@ function pulumi_remote_archive {
     return (pulumi_archive Remote $Value)
 }
 
-function pulumi_file_archive {
+function New-PulumiFileArchive {
+    [Alias("pulumi_file_archive")]
     param (
         [parameter(mandatory = $true)]
         [string]
@@ -141,7 +149,8 @@ function pulumi_file_archive {
     return (pulumi_archive File $Value)
 }
 
-function pulumi_asset_archive {
+function New-PulumiAssetArchive {
+    [Alias("pulumi_asset_archive")]
     param (
         [parameter(mandatory = $true)]
         [hashtable]
@@ -151,7 +160,8 @@ function pulumi_asset_archive {
     return (pulumi_archive Asset $Value)
 }
 
-function pulumi_output {
+function New-PulumiOutput {
+    [Alias("pulumi_output")]
     param (
         [parameter(mandatory = $true)]
         [string]
@@ -171,7 +181,7 @@ class pulumi_variable {
     [object] $value
 
     [string] reference ([string]$PropertyName) {
-        return "`${{0}{2}{1}}".Replace('{0}', $this.name).Replace('{1}', $PropertyName).replace("{2}", $(if($PropertyName[0] -ne '['){'.'}))
+        return "`${{0}{2}{1}}".Replace('{0}', $this.name).Replace('{1}', $PropertyName).replace("{2}", $(if ($PropertyName[0] -ne '[') { '.' }))
     }
 
     pulumi_variable ([string]$name, [object]$value) {
@@ -180,7 +190,8 @@ class pulumi_variable {
     }
 }
 
-function pulumi_function {
+function Invoke-PulumiFunction {
+    [Alias("pulumi_function")]
     param (
         [parameter(mandatory)]
         [string]
@@ -190,7 +201,7 @@ function pulumi_function {
         [hashtable]
         $arguments,
         
-        [parameter(mandatory)]
+        [parameter()]
         [string]
         $returnproperty,
         
@@ -201,17 +212,22 @@ function pulumi_function {
 
     $function = @{
         "Fn::Invoke" = @{
-            Function = $name
+            Function  = $name
             Arguments = $arguments
-            return = $returnproperty
         }
+    }
+    
+    if ($PSBoundParameters.ContainsKey("returnproperty")) {
+        $function["Fn::Invoke"]["return"] = $returnproperty
     }
 
     $global:variables += @{ $variablename = $function }
     return [pulumi_variable]::new($variablename, $value)
 }
 
-function pulumi ([scriptblock]$scriptblock) {
+function New-PulumiYamlFile ([scriptblock]$scriptblock) {
+    [Alias("pulumi")]
+
     $global:pulumiresources = @()
     $global:outputs = @{}
     $global:variables = @{}

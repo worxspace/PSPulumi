@@ -1,11 +1,12 @@
-# irm https://raw.githubusercontent.com/pulumi/pulumi-azure-native/master/provider/cmd/pulumi-resource-azure-native/schema.json -OutFile $PSScriptRoot/schema.json
-# $schema = Get-Content ./schema.json | ConvertFrom-Json -AsHashtable
+irm https://raw.githubusercontent.com/pulumi/pulumi-azure-native/master/provider/cmd/pulumi-resource-azure-native/schema.json -OutFile $PSScriptRoot/schema.json
+$schema = Get-Content ./schema.json | ConvertFrom-Json -AsHashtable
 
 $OutputFile = "$PSScriptRoot/bin/aznativemodule.psm1"
 
 Set-Content $OutputFile -Value '' -Force
 
 $script:classesToCreate = @()
+$script:functionsToCreate = @()
 
 $script:typeswithmultiplerefs = @{}
 
@@ -172,14 +173,29 @@ function Get-FunctionParameterText {
         $ParameterName,
 
         [parameter(mandatory)]
-        $TypeDefinition
+        $TypeDefinition,
+
+        [parameter()]
+        [ValidateSet("resource", "type", "function")]
+        $ObjectType = "resource"
     )
 
     process {
         $Output = @()
         $validateset = $null
 
-        $inputProperty = $TypeDefinition.inputProperties[$ParameterName]
+        $inputProperty = ""
+        switch ($ObjectType) {
+            "resource" { 
+            $inputProperty = $TypeDefinition.inputProperties[$ParameterName] 
+        } 
+        "type" { 
+            $inputProperty = $TypeDefinition.properties[$ParameterName]
+        }
+        "function" { 
+            $inputProperty = $TypeDefinition.inputs.properties[$ParameterName] 
+        }
+    }
 
         $Output += "[parameter(mandatory=`${0})]" -f $($requiredInputs -contains $ParameterName)
 
@@ -290,6 +306,8 @@ function Add-ClassDefinitionToModule {
 
         $fileContent | Add-Content $ModuleFile -Force
 
+        $null = $PulumiType | Add-TypeFunctionDefinitionToModule -SchemaObject $SchemaObject -ModuleFile $ModuleFile
+
         return $className
     }
 }
@@ -313,14 +331,21 @@ function Add-FunctionDefinitionToModule {
         
         $resourcedefinition = $SchemaObject.resources[$PulumiResource]
         
-        if($null -eq $resourcedefinition.inputProperties) {
+        if ($null -eq $resourcedefinition.inputProperties) {
             Write-Warning "resource $PulumiResource does not have any inputProperties"
             return $null
         }
 
-        $functionName = ($PulumiResource -replace '-|:', '_').tolower()
+        $functionName = $PulumiResource -replace '(^|_|:|-)(.)', { $_.Groups[2].Value.ToUpper() } 
+        $functionAlias = ($PulumiResource -replace '-|:', '_').tolower()
 
-        $Output += "function {0} {".replace("{0}", $functionName)
+        if ($script:functionsToCreate -contains $functionName) {
+            return $functionName
+        }
+        $script:functionsToCreate += $functionName
+
+        $Output += "function New-{0} {".replace("{0}", $functionName)
+        $Output += "[Alias('$functionAlias')]"
         $Output += "param ("
 
         $Output += $resourcedefinition.inputProperties.Keys | Get-FunctionParameterText -TypeDefinition $resourcedefinition
@@ -335,7 +360,7 @@ function Add-FunctionDefinitionToModule {
         $Output += "`$resource = [pulumiresource]::new(`$pulumiid, `"$PulumiResource`")"
         $Output += ""
 
-        $resourcedefinition.requiredInputs.where{-not [string]::IsNullOrEmpty($_)} | ForEach-Object {
+        $resourcedefinition.requiredInputs.where{ -not [string]::IsNullOrEmpty($_) } | ForEach-Object {
             $Output += "`$resource.properties[`"$_`"] = `$$_"
         }
 
@@ -362,6 +387,136 @@ function Add-FunctionDefinitionToModule {
     }
 }
 
+function Add-FunctionFunctionDefinitionToModule {
+    param(
+        [parameter(mandatory, valuefrompipeline)]
+        [string]
+        $PulumiFunction,
+
+        [parameter(mandatory)]
+        $SchemaObject,
+
+        [parameter(mandatory)]
+        $ModuleFile
+    )
+
+    process {
+        write-verbose "adding function $PulumiFunction"
+        $output = @()
+        
+        $functiondefinition = $SchemaObject.functions[$PulumiFunction]
+
+        $functionName = $PulumiFunction -replace '(^[^:]*):', '$1Function:' -replace '(^|_|:|-)(.)', { $_.Groups[2].Value.ToUpper() } 
+
+        if ($script:functionsToCreate -contains $functionName) {
+            return $functionName
+        }
+        $script:functionsToCreate += $functionName
+
+        $Output += "function Invoke-{0} {".replace("{0}", $functionName)
+        $Output += "param ("
+
+        if ($null -ne $functiondefinition.inputs.properties) {
+            $Output += $functiondefinition.inputs.properties.Keys | Get-FunctionParameterText -TypeDefinition $functiondefinition -ObjectType function
+        }
+
+        $Output[-1] = $Output[-1].trim(",")
+        $Output += ")"
+        $Output += ""
+
+        $Output += "process {"
+        $Output += "`$arguments = @{}"
+        
+        $functiondefinition.inputs.required.where{ -not [string]::IsNullOrEmpty($_) } | ForEach-Object {
+            $Output += "`$arguments[`"$_`"] = `$$_"
+        }
+        
+        $Output += ""
+        
+        @($functiondefinition.inputs.properties.Keys).where{ $_ -notin $functiondefinition.inputs.required } | ForEach-Object {
+            $Output += "if(`$PSBoundParameters.Keys -icontains '$_') {"
+            $Output += "`$arguments[`"$_`"] = `$$_"
+            $Output += "}"
+            $Output += ""
+        }
+        
+        $Output += "`$functionObject = Invoke-PulumiFunction -Name $PulumiFunction -variableName `$([guid]::NewGuid().Guid) -Arguments `$arguments"
+        $Output += "return `$functionObject"
+        $Output += "}"
+    
+        $output += "}"
+
+        $fileContent = $output -join [system.environment]::newline
+
+        $fileContent | Add-Content $ModuleFile -Force
+
+        return $functionName
+    }
+}
+
+function Add-TypeFunctionDefinitionToModule {
+    param(
+        [parameter(mandatory, valuefrompipeline)]
+        [string]
+        $PulumiType,
+
+        [parameter(mandatory)]
+        $SchemaObject,
+
+        [parameter(mandatory)]
+        $ModuleFile
+    )
+
+    process {
+        write-verbose "adding function $PulumiType"
+        $output = @()
+        
+        $typedefinition = $SchemaObject.types[$PulumiType]
+        
+        if ($null -eq $typedefinition.properties) {
+            Write-Warning "resource $PulumiType does not have any inputProperties"
+            return $null
+        }
+
+        $functionName = $PulumiType -replace '(^[^:]*):', '$1Type:' -replace '(^|_|:|-)(.)', { $_.Groups[2].Value.ToUpper() } 
+
+        if ($script:functionsToCreate -contains $functionName) {
+            return $functionName
+        }
+        $script:functionsToCreate += $functionName
+
+        $Output += "function New-{0} {".replace("{0}", $functionName)
+        $Output += "param ("
+
+        $Output += $typedefinition.properties.Keys | Get-FunctionParameterText -TypeDefinition $typedefinition -ObjectType type
+
+        $Output[-1] = $Output[-1].trim(",")
+        $Output += ")"
+        $Output += ""
+
+        $Output += "process {"
+        $Output += "return `$([{0}]`$PSBoundParameters)" -f ($PulumiType -replace '_|-|:')
+        $Output += "}"
+    
+        $output += "}"
+
+        $fileContent = $output -join [system.environment]::newline
+
+        $fileContent | Add-Content $ModuleFile -Force
+
+        return $functionName
+    }
+}
+
+$functionkeys = $schema.functions.Keys
+$i = 0
+$functionkeys | ForEach-Object {
+    Write-Progress -Activity "Processing functions" -Id 0 -PercentComplete ($i++ / $functionkeys.count * 100) $_
+    $null = Add-FunctionFunctionDefinitionToModule -PulumiFunction $_ -SchemaObject $schema -ModuleFile $OutputFile
+}
+
+Write-Progress -Activity "Processing functions" -Id 0 -Completed
+
 $resourcekeys = $schema.resources.Keys
 $i = 0
 $resourcekeys | ForEach-Object {
@@ -370,7 +525,7 @@ $resourcekeys | ForEach-Object {
 }
 
 Write-Progress -Activity "Processing resources" -Id 0 -Completed
-
+ 
 $i = 0
 $script:classesToCreate | ForEach-Object {
     Write-Progress -Activity "Processing classes" -Id 0 -PercentComplete ($i++ / $script:classesToCreate.count * 100) $_
