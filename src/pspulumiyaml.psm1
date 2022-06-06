@@ -226,7 +226,7 @@ function Invoke-PulumiFunction {
 }
 
 function New-PulumiYamlFile ([scriptblock]$scriptblock) {
-    [Alias("pulumi")]
+    [Alias("pulumi_configuration")]
 
     $global:pulumiresources = @()
     $global:outputs = @{}
