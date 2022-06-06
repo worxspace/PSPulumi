@@ -1,14 +1,31 @@
+$ProgressPreference = 'SilentlyContinue'
+
 irm https://raw.githubusercontent.com/pulumi/pulumi-azure-native/master/provider/cmd/pulumi-resource-azure-native/schema.json -OutFile $PSScriptRoot/schema.json
 $schema = Get-Content ./schema.json | ConvertFrom-Json -AsHashtable
 
-$OutputFile = "$PSScriptRoot/bin/aznativemodule.psm1"
-
-Set-Content $OutputFile -Value '' -Force
+$OutputDirectory = "$PSScriptRoot/bin"
+New-Item $OutputDirectory -ItemType Directory -Force | Out-Null
+Remove-Item (Join-Path $OutputDirectory "*") -Force -re
+$RootModuleName = "pspulumi.azurenative"
+$RootModule = Join-Path $OutputDirectory "$RootModuleName.psm1"
 
 $script:classesToCreate = @()
 $script:functionsToCreate = @()
 
 $script:typeswithmultiplerefs = @{}
+
+function Convert-PulumiNameToModuleName {
+    param(
+        [parameter(mandatory, valuefrompipeline)]
+        [string]
+        $Name
+    )
+
+    process {
+        $NameParts = $Name -split ':'
+        return    "pspulumi.{0}.{1}" -f $NameParts[0].replace("-", ""), $NameParts[1].replace("-", "")
+    }
+}
 
 function Convert-PulumiTypeToPowerShellType {
     param(
@@ -69,7 +86,11 @@ function Get-ClassPropertyText {
         $PropertyName,
 
         [parameter(mandatory)]
-        $TypeDefinition
+        $TypeDefinition,
+
+        [parameter()]
+        [string]
+        $CurrentModule
     )
 
     process {
@@ -113,7 +134,9 @@ function Get-ClassPropertyText {
                     $validateset = $refObject.enum.value
                 }
                 else {
-                    $propertytypestring = "[{0}]" -f ($parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -ModuleFile $ModuleFile)
+                    $classObject = $parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -RootModuleFile $RootModuleFile
+                    $classFQDN = $classObject.module -eq $CurrentModule ? $classObject.Name : "{0}.{1}" -f $classObject.module, $classObject.Name
+                    $propertytypestring = "[$classFQDN]"
                 }
             }
         }
@@ -141,7 +164,9 @@ function Get-ClassPropertyText {
                     $validateset = $refObject.enum.value
                 }
                 else {
-                    $propertytypestring = "[{0}[]]" -f ($parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -ModuleFile $ModuleFile)
+                    $classObject = $parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -RootModuleFile $RootModuleFile
+                    $classFQDN = $classObject.module -eq $CurrentModule ? $classObject.Name : "{0}.{1}" -f $classObject.module, $classObject.Name
+                    $propertytypestring = "[$classFQDN[]]"
                 }
             }
         }
@@ -177,7 +202,11 @@ function Get-FunctionParameterText {
 
         [parameter()]
         [ValidateSet("resource", "type", "function")]
-        $ObjectType = "resource"
+        $ObjectType = "resource",
+
+        [parameter()]
+        [string]
+        $CurrentModule
     )
 
     process {
@@ -187,17 +216,17 @@ function Get-FunctionParameterText {
         $inputProperty = ""
         switch ($ObjectType) {
             "resource" { 
-            $inputProperty = $TypeDefinition.inputProperties[$ParameterName] 
-        } 
-        "type" { 
-            $inputProperty = $TypeDefinition.properties[$ParameterName]
+                $inputProperty = $TypeDefinition.inputProperties[$ParameterName] 
+            } 
+            "type" { 
+                $inputProperty = $TypeDefinition.properties[$ParameterName]
+            }
+            "function" { 
+                $inputProperty = $TypeDefinition.inputs.properties[$ParameterName] 
+            }
         }
-        "function" { 
-            $inputProperty = $TypeDefinition.inputs.properties[$ParameterName] 
-        }
-    }
 
-        $Output += "[parameter(mandatory=`${0})]" -f $($requiredInputs -contains $ParameterName)
+        $Output += "[parameter(mandatory=`${0},HelpMessage='{1}')]" -f $($requiredInputs -contains $ParameterName), $("$("$($inputProperty.description)" -replace '(\r\n)|\r|\n', [system.environment]::newline))" -replace "['’‘]", "''")
 
         $propertytypestring = ""
 
@@ -223,7 +252,12 @@ function Get-FunctionParameterText {
             }
             else {
                 $parts = $ref -split '/'
-                $propertytypestring = "[{0}]" -f ($parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -ModuleFile $ModuleFile)
+                $classObject = $parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -RootModuleFile $RootModuleFile
+
+                # Write-Verbose "Building parameter $parametername in $CurrentModule. Class to be used is $($classObject.Name) in module $($classObject.module)" -verbose
+
+                $classFQDN = $classObject.module -eq $CurrentModule ? $classObject.Name : "{0}.{1}" -f $classObject.module, $classObject.Name
+                $propertytypestring = "[$classFQDN]"
             }
         }
 
@@ -244,7 +278,9 @@ function Get-FunctionParameterText {
             }
             else {
                 $parts = $ref -split '/'
-                $propertytypestring = "[{0}[]]" -f ($parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -ModuleFile $ModuleFile)
+                $classObject = $parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -RootModuleFile $RootModuleFile
+                $classFQDN = $classObject.module -eq $CurrentModule ? $classObject.Name : "{0}.{1}" -f $classObject.module, $classObject.Name
+                $propertytypestring = "[$classFQDN[]]"
             }
         }
         
@@ -280,35 +316,44 @@ function Add-ClassDefinitionToModule {
         $SchemaObject,
 
         [parameter(mandatory)]
-        $ModuleFile
+        $RootModuleFile
     )
 
     process {
         write-verbose "adding class $pulumitype"
+        $ModuleName = $PulumiType | Convert-PulumiNameToModuleName
         $output = @()
         
         $typedefinition = $SchemaObject.types[$PulumiType]
         
-        $className = ($PulumiType -replace '-|:').tolower()
+        $className = $PulumiType.Split(":")[-1]
         
-        if ($script:classesToCreate -contains $classname) {
-            return $classname
+        if ($script:classesToCreate -icontains $PulumiType) {
+            return [pscustomobject]@{
+                name   = $classname
+                module = $PulumiType | Convert-PulumiNameToModuleName
+            }
         }
-        $script:classesToCreate += $classname
+        $script:classesToCreate += $PulumiType
 
         $Output += "class {0} {".replace("{0}", $className)
 
-        $Output += $typedefinition.properties.Keys | Get-ClassPropertyText -TypeDefinition $typedefinition
+        $Output += $typedefinition.properties.Keys | Get-ClassPropertyText -TypeDefinition $typedefinition -CurrentModule $ModuleName
 
         $output += "}"
 
         $fileContent = $output -join [system.environment]::newline
 
+        $ModuleFile = Join-Path (Split-Path $RootModuleFile) "$ModuleName.psm1"
+
         $fileContent | Add-Content $ModuleFile -Force
 
-        $null = $PulumiType | Add-TypeFunctionDefinitionToModule -SchemaObject $SchemaObject -ModuleFile $ModuleFile
+        $null = $PulumiType | Add-TypeFunctionDefinitionToModule -SchemaObject $SchemaObject -RootModuleFile $RootModuleFile
 
-        return $className
+        return [pscustomobject]@{
+            name   = $classname
+            module = $PulumiType | Convert-PulumiNameToModuleName
+        }
     }
 }
 
@@ -322,11 +367,12 @@ function Add-FunctionDefinitionToModule {
         $SchemaObject,
 
         [parameter(mandatory)]
-        $ModuleFile
+        $RootModuleFile
     )
 
     process {
         write-verbose "adding function $PulumiResource"
+        $ModuleName = $PulumiResource | Convert-PulumiNameToModuleName
         $output = @()
         
         $resourcedefinition = $SchemaObject.resources[$PulumiResource]
@@ -348,9 +394,9 @@ function Add-FunctionDefinitionToModule {
         $Output += "[Alias('$functionAlias')]"
         $Output += "param ("
 
-        $Output += $resourcedefinition.inputProperties.Keys | Get-FunctionParameterText -TypeDefinition $resourcedefinition
+        $Output += $resourcedefinition.inputProperties.Keys | Get-FunctionParameterText -TypeDefinition $resourcedefinition -CurrentModule $ModuleName
 
-        $Output += "[parameter(mandatory)]"
+        $Output += "[parameter(mandatory,HelpMessage='The reference to call when you want to make a dependency to another resource')]"
         $Output += "[string]"
         $Output += "`$pulumiid"
         $Output += ")"
@@ -381,6 +427,8 @@ function Add-FunctionDefinitionToModule {
 
         $fileContent = $output -join [system.environment]::newline
 
+        $ModuleFile = Join-Path (Split-Path $RootModuleFile) "$ModuleName.psm1"
+
         $fileContent | Add-Content $ModuleFile -Force
 
         return $functionName
@@ -397,11 +445,12 @@ function Add-FunctionFunctionDefinitionToModule {
         $SchemaObject,
 
         [parameter(mandatory)]
-        $ModuleFile
+        $RootModuleFile
     )
 
     process {
         write-verbose "adding function $PulumiFunction"
+        $ModuleName = $PulumiFunction | Convert-PulumiNameToModuleName
         $output = @()
         
         $functiondefinition = $SchemaObject.functions[$PulumiFunction]
@@ -417,7 +466,7 @@ function Add-FunctionFunctionDefinitionToModule {
         $Output += "param ("
 
         if ($null -ne $functiondefinition.inputs.properties) {
-            $Output += $functiondefinition.inputs.properties.Keys | Get-FunctionParameterText -TypeDefinition $functiondefinition -ObjectType function
+            $Output += $functiondefinition.inputs.properties.Keys | Get-FunctionParameterText -TypeDefinition $functiondefinition -ObjectType function -CurrentModule $ModuleName
         }
 
         $Output[-1] = $Output[-1].trim(",")
@@ -448,6 +497,8 @@ function Add-FunctionFunctionDefinitionToModule {
 
         $fileContent = $output -join [system.environment]::newline
 
+        $ModuleFile = Join-Path (Split-Path $RootModuleFile) "$ModuleName.psm1"
+
         $fileContent | Add-Content $ModuleFile -Force
 
         return $functionName
@@ -464,11 +515,12 @@ function Add-TypeFunctionDefinitionToModule {
         $SchemaObject,
 
         [parameter(mandatory)]
-        $ModuleFile
+        $RootModuleFile
     )
 
     process {
         write-verbose "adding function $PulumiType"
+        $ModuleName = $PulumiType | Convert-PulumiNameToModuleName
         $output = @()
         
         $typedefinition = $SchemaObject.types[$PulumiType]
@@ -488,19 +540,21 @@ function Add-TypeFunctionDefinitionToModule {
         $Output += "function New-{0} {".replace("{0}", $functionName)
         $Output += "param ("
 
-        $Output += $typedefinition.properties.Keys | Get-FunctionParameterText -TypeDefinition $typedefinition -ObjectType type
+        $Output += $typedefinition.properties.Keys | Get-FunctionParameterText -TypeDefinition $typedefinition -ObjectType type -CurrentModule $ModuleName
 
         $Output[-1] = $Output[-1].trim(",")
         $Output += ")"
         $Output += ""
 
         $Output += "process {"
-        $Output += "return `$([{0}]`$PSBoundParameters)" -f ($PulumiType -replace '_|-|:')
+        $Output += "return `$([{0}]`$PSBoundParameters)" -f ($PulumiType.Split(":")[-1])
         $Output += "}"
     
         $output += "}"
 
         $fileContent = $output -join [system.environment]::newline
+
+        $ModuleFile = Join-Path (Split-Path $RootModuleFile) "$ModuleName.psm1"
 
         $fileContent | Add-Content $ModuleFile -Force
 
@@ -508,20 +562,105 @@ function Add-TypeFunctionDefinitionToModule {
     }
 }
 
+function New-PSPulumiModuleBundle {
+    param(
+        [parameter(Mandatory)]
+        [string]
+        $OutputDirectory,
+
+        [parameter(Mandatory)]
+        [string]
+        $RootModuleName,
+
+        [parameter()]
+        [string]
+        $Version = $env:GITVERSION_MAJORMINORPATCH,
+
+        [parameter()]
+        [string]
+        $Prerelease = $env:GITVERSION_NUGETPRERELEASETAGV2
+    )
+
+    process {
+        $Modules = @()
+        Get-ChildItem $OutputDirectory | ForEach-Object {
+            $ModulePath = Join-Path $OutputDirectory $_.BaseName
+            New-Item $ModulePath -ItemType Directory -Force | Out-Null
+            Move-Item $_.FullName -Destination $ModulePath
+            
+            $ManifestFile = Join-Path $ModulePath "$($_.BaseName).psd1"
+            $guid = ($_.BaseName | New-ModuleGuid)
+            $ModuleManifestParams = @{
+                Description   = 'Module containing functions required to create YAML/JSON definitions for Azure Native pulumi provider'
+                Path          = $ManifestFile
+                RootModule    = "$($_.BaseName).psm1"
+                Author        = 'Worxspace'
+                CompanyName   = 'Worxspace'
+                Guid          = $guid
+                ModuleVersion = $Version
+            }
+
+            if ($Prerelease.Length -gt 1) {
+                $ModuleManifestParams['Prerelease'] = $Prerelease
+            }
+            New-ModuleManifest @ModuleManifestParams
+
+            $fullversion = $version + $Prerelease
+            $Modules += @{ ModuleName = $_.BaseName; ModuleVersion = $fullversion; GUID = $guid }
+        }
+
+        $ModulePath = Join-Path $OutputDirectory $RootModuleName
+        New-Item $ModulePath -ItemType Directory -Force | Out-Null
+        $ModuleFile = Join-Path $ModulePath "$RootModuleName.psm1"
+        New-Item $ModuleFile -ItemType File -Force | Out-Null
+        $ManifestFile = Join-Path $ModulePath "$RootModuleName.psd1"
+        $guid = ($RootModuleName | New-ModuleGuid)
+        $ModuleManifestParams = @{
+            Description     = 'Parent module containing all Azure Native modules required to create YAML/JSON definitions for pulumi'
+            Path            = $ManifestFile
+            RootModule      = "$RootModuleName.psm1"
+            Author          = 'Worxspace'
+            CompanyName     = 'Worxspace'
+            Guid            = $guid
+            ModuleVersion   = $Version
+            RequiredModules = $Modules
+        }
+
+        if ($Prerelease.Length -gt 1) {
+            $ModuleManifestParams['Prerelease'] = $Prerelease
+        }
+        New-ModuleManifest @ModuleManifestParams
+    }
+}
+
+function New-ModuleGuid {
+    param(
+        [parameter(Mandatory, ValueFromPipeline)]
+        $name
+    )
+
+    process {
+        $algorithm = [System.Security.Cryptography.HashAlgorithm]::Create('MD5')
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($name)
+        $hash = $algorithm.ComputeHash($bytes)
+        return [guid]::new($hash).Guid.ToString()
+    }
+}
+
 $functionkeys = $schema.functions.Keys
 $i = 0
-$functionkeys | ForEach-Object {
+$functionkeys | ? { $true } | ForEach-Object {
     Write-Progress -Activity "Processing functions" -Id 0 -PercentComplete ($i++ / $functionkeys.count * 100) $_
-    $null = Add-FunctionFunctionDefinitionToModule -PulumiFunction $_ -SchemaObject $schema -ModuleFile $OutputFile
+    $null = Add-FunctionFunctionDefinitionToModule -PulumiFunction $_ -SchemaObject $schema -RootModuleFile $RootModule
 }
 
 Write-Progress -Activity "Processing functions" -Id 0 -Completed
 
 $resourcekeys = $schema.resources.Keys
 $i = 0
-$resourcekeys | ForEach-Object {
+$resourcekeys | ? { $true } | ForEach-Object {
     Write-Progress -Activity "Processing resources" -Id 0 -PercentComplete ($i++ / $resourcekeys.count * 100) $_
-    $null = Add-FunctionDefinitionToModule -PulumiResource $_ -SchemaObject $schema -ModuleFile $OutputFile
+    $null = Add-FunctionDefinitionToModule -PulumiResource $_ -SchemaObject $schema -RootModuleFile $RootModule
 }
 
 Write-Progress -Activity "Processing resources" -Id 0 -Completed
@@ -529,7 +668,7 @@ Write-Progress -Activity "Processing resources" -Id 0 -Completed
 $i = 0
 $script:classesToCreate | ForEach-Object {
     Write-Progress -Activity "Processing classes" -Id 0 -PercentComplete ($i++ / $script:classesToCreate.count * 100) $_
-    $null = Add-ClassDefinitionToModule -PulumiType $_ -SchemaObject $schema -ModuleFile $OutputFile
+    $null = Add-ClassDefinitionToModule -PulumiType $_ -SchemaObject $schema -RootModuleFile $RootModule
 }
 Write-Progress -Activity "Processing classes" -Id 0 -Completed
 
@@ -546,5 +685,9 @@ $settings = @{
     }
 }
 
-Invoke-Formatter -ScriptDefinition (Get-Content $OutputFile -Raw) -Settings $settings | Set-Content $OutputFile -Force
+#loop all module files
+Get-ChildItem (Split-Path $RootModule) | ForEach-Object {
+    Invoke-Formatter -ScriptDefinition (Get-Content $_.FullName -Raw) -Settings $settings | Set-Content $_.FullName -Force
+}
 
+New-PSPulumiModuleBundle -OutputDirectory $OutputDirectory -RootModuleName $RootModuleName -Version '0.0.1'
