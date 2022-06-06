@@ -1,5 +1,7 @@
-using module ./pspulumi.psm1
-using module ./bin/aznativemodule.psm1
+using module pspulumiyaml
+
+Import-Module pspulumi.azurenative.resources
+Import-Module pspulumi.azurenative.storage
 
 New-PulumiYamlFile {
 
@@ -52,7 +54,8 @@ New-PulumiYamlFile {
   }
   $null = azure_native_storage_blob @Props
 
-  pulumi_output test $storageAccount.reference("primaryEndpoints.web")
-  pulumi_output primarykey $storageAccount.keys("[0].value")
+  $keys = Invoke-AzureNativeStorageListStorageAccountKeys -accountName $storageAccount.reference("name") -resourceGroupName $resourceGroup.reference("name")
 
+  pulumi_output test $storageAccount.reference("primaryEndpoints.web")
+  pulumi_output primarykey $keys.reference("keys[0].value")
 }
