@@ -39,5 +39,17 @@ RUN chmod +x /opt/microsoft/powershell/7/pwsh
 # Create the symbolic link that points to pwsh
 RUN ln -s /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh
 
-# Install pulumi
-RUN curl -fsSL https://get.pulumi.com | sh
+# Download the pulumi '.tar.gz' archive
+RUN curl -fsSL https://get.pulumi.com/releases/sdk/pulumi-v3.33.2-linux-x64.tar.gz  -o /tmp/pulumi.tar.gz
+
+# Create the target folder where pulumi will be placed
+RUN mkdir -p /opt/pulumi
+
+# Expand pulumi to the target folder
+RUN tar zxf /tmp/pulumi.tar.gz -C /opt
+
+# Set execute permissions
+RUN chmod +x /opt/pulumi/pulumi
+
+# Create the symbolic link that points to pulumi
+RUN ln -s /opt/pulumi/pulumi /usr/bin/pulumi
