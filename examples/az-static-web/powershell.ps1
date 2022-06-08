@@ -1,5 +1,5 @@
-Import-Module pspulumi.azurenative.resources
-Import-Module pspulumi.azurenative.storage
+Import-Module pspulumiyaml.azurenative.resources
+Import-Module pspulumiyaml.azurenative.storage
 
 pulumi_configuration {
 

@@ -1,6 +1,6 @@
-Import-Module pspulumi.azurenative.resources
-Import-Module pspulumi.azurenative.storage
-Import-Module pspulumi.azurenative.compute
+Import-Module pspulumiyaml.azurenative.resources
+Import-Module pspulumiyaml.azurenative.storage
+Import-Module pspulumiyaml.azurenative.compute
 
 New-PulumiYamlFile {
 

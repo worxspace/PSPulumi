@@ -6,7 +6,7 @@ $schema = Get-Content ./schema.json | ConvertFrom-Json -AsHashtable
 $OutputDirectory = "$PSScriptRoot/bin"
 New-Item $OutputDirectory -ItemType Directory -Force | Out-Null
 Remove-Item (Join-Path $OutputDirectory "*") -Force -re
-$RootModuleName = "pspulumi.azurenative"
+$RootModuleName = "pspulumiyaml.azurenative"
 $RootModule = Join-Path $OutputDirectory "$RootModuleName.psm1"
 
 $script:classesToCreate = @()
@@ -23,7 +23,7 @@ function Convert-PulumiNameToModuleName {
 
     process {
         $NameParts = $Name -split ':'
-        return    "pspulumi.{0}.{1}" -f $NameParts[0].replace("-", ""), $NameParts[1].replace("-", "")
+        return    "pspulumiyaml.{0}.{1}" -f $NameParts[0].replace("-", ""), $NameParts[1].replace("-", "")
     }
 }
 
@@ -582,7 +582,7 @@ function New-PSPulumiModuleBundle {
     )
 
     process {
-        $Modules = @()
+        $Modules = @("PSPulumiYaml")
         Get-ChildItem $OutputDirectory | ForEach-Object {
             $ModulePath = Join-Path $OutputDirectory $_.BaseName
             New-Item $ModulePath -ItemType Directory -Force | Out-Null
@@ -591,13 +591,14 @@ function New-PSPulumiModuleBundle {
             $ManifestFile = Join-Path $ModulePath "$($_.BaseName).psd1"
             $guid = ($_.BaseName | New-ModuleGuid)
             $ModuleManifestParams = @{
-                Description   = 'Module containing functions required to create YAML/JSON definitions for Azure Native pulumi provider'
-                Path          = $ManifestFile
-                RootModule    = "$($_.BaseName).psm1"
-                Author        = 'Worxspace'
-                CompanyName   = 'Worxspace'
-                Guid          = $guid
-                ModuleVersion = $Version
+                Description     = 'Module containing functions required to create YAML/JSON definitions for Azure Native pulumi provider'
+                Path            = $ManifestFile
+                RootModule      = "$($_.BaseName).psm1"
+                Author          = 'Worxspace'
+                CompanyName     = 'Worxspace'
+                Guid            = $guid
+                ModuleVersion   = $Version
+                RequiredModules = @("PSPulumiYaml")
             }
 
             if ($Prerelease.Length -gt 1) {
@@ -685,9 +686,19 @@ $settings = @{
     }
 }
 
-#loop all module files
-Get-ChildItem (Split-Path $RootModule) | ForEach-Object {
-    Invoke-Formatter -ScriptDefinition (Get-Content $_.FullName -Raw) -Settings $settings | Set-Content $_.FullName -Force
+try {
+    Import-Module PSScriptAnalyzer -ErrorAction Stop
+}
+catch {
+    Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
 }
 
-New-PSPulumiModuleBundle -OutputDirectory $OutputDirectory -RootModuleName $RootModuleName -Version '0.0.1'
+#loop all module files
+Get-ChildItem (Split-Path $RootModule) | ForEach-Object {
+    $Content = (Get-Content $_.FullName -Raw)
+    $newContent = 'using module pspulumiyaml' + [System.Environment]::newline + $Content
+
+    Invoke-Formatter -ScriptDefinition $newContent -Settings $settings | Set-Content $_.FullName -Force
+}
+
+New-PSPulumiModuleBundle -OutputDirectory $OutputDirectory -RootModuleName $RootModuleName -Version '0.0.2'
