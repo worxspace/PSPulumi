@@ -1,9 +1,7 @@
-using module pspulumiyaml
-
 Import-Module pspulumi.azurenative.resources
 Import-Module pspulumi.azurenative.storage
 
-New-PulumiYamlFile {
+pulumi_configuration {
 
   $location = , 'switzerlandnorth'#, 'westeurope'
 
