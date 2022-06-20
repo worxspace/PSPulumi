@@ -12,10 +12,6 @@ Describe 'My Azure Infra' {
 
     context 'Compliance' {
 
-        BeforeAll {
-            $ParsedConfig = . $PSScriptRoot/powershell.ps1 | ConvertFrom-Json -AsHashtable
-        }
-
         It 'should not contain any compute resource' {
             $ParsedConfig.resources.values.type -Match 'azure-native:compute:' | Should -BeNullOrEmpty -Because 'it should not return any resource types of type azure-native:compute:*'
         }
