@@ -99,6 +99,7 @@ function Get-ClassPropertyText {
         $inputProperty = $TypeDefinition.properties[$PropertyName]
 
         $propertytypestring = ""
+        $validateset = $null
 
         $type = $($inputProperty.type, $inputProperty.oneOf.type | Where-Object { -not [string]::IsNullOrEmpty($_) })
         $arraytype = $($inputProperty.items.type, $inputProperty.items.oneOf.type | Where-Object { -not [string]::IsNullOrEmpty($_) })
@@ -121,19 +122,16 @@ function Get-ClassPropertyText {
             if ([string]::IsNullOrEmpty($ref)) {
                 $type = $inputProperty.additionalProperties.type, $inputProperty.oneOf.additionalProperties.type, $inputProperty.additionalProperties.'$ref', $inputProperty.oneOf.additionalProperties.'$ref'
                 $propertytypestring = Convert-PulumiTypeToPowerShellType -Type "$type"
-            }
-            elseif ($ref -imatch '^pulumi.json#/') {
+            } elseif ($ref -imatch '^pulumi.json#/') {
                 $propertytypestring = "[object]"
-            }
-            else {
+            } else {
                 write-verbose "creating class for object $ref"
                 $parts = $ref -split '/'
                 $refObject = $schema.types[$parts[-1]]
-                
+
                 if ($null -ne $refObject.enum) {
                     $validateset = $refObject.enum.value
-                }
-                else {
+                } else {
                     $classObject = $parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -RootModuleFile $RootModuleFile
                     $classFQDN = $classObject.module -eq $CurrentModule ? $classObject.Name : "{0}.{1}" -f $classObject.module, $classObject.Name
                     $propertytypestring = "[$classFQDN]"
@@ -151,26 +149,23 @@ function Get-ClassPropertyText {
             if ([string]::IsNullOrEmpty($ref)) {
                 $type = $inputProperty.additionalProperties.type, $inputProperty.oneOf.additionalProperties.type
                 $propertytypestring = "[{0}[]]" -f (Convert-PulumiComplexTypeToPowerShellType -Type "$type").trim('[]')
-            }
-            elseif ($ref -imatch '^pulumi.json#/') {
+            } elseif ($ref -imatch '^pulumi.json#/') {
                 $propertytypestring = "[object[]]"
-            }
-            else {
+            } else {
                 $parts = $ref -split '/'
                 $refObject = $schema.types[$parts[-1]]
 
                 if ($null -ne $refObject.enum) {
                     $propertytypestring = Convert-PulumiTypeToPowerShellType -Type $refObject.type
                     $validateset = $refObject.enum.value
-                }
-                else {
+                } else {
                     $classObject = $parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -RootModuleFile $RootModuleFile
                     $classFQDN = $classObject.module -eq $CurrentModule ? $classObject.Name : "{0}.{1}" -f $classObject.module, $classObject.Name
                     $propertytypestring = "[$classFQDN[]]"
                 }
             }
         }
-        
+
         if ($null -ne $inputProperty.oneOf) {
             $parts = $inputProperty.oneOf.'$ref' -split '/'
             $refObject = $schema.types[$parts[-1]]
@@ -182,10 +177,11 @@ function Get-ClassPropertyText {
         }
 
         if ($null -ne $validateset) {
-            $Output += "[ValidateSet({0})]" -f $($validateset.foreach{ "'$_'" } -join ', ')
+            $attribute = "ArgumentCompletions"
+            $Output += "[{0}({1})]" -f $attribute, $($validateset.foreach{ "'$_'" } -join ', ')
         }
 
-        $Output += "$propertytypestring `${0}" -f $propertyName
+        $Output += "$propertytypestring `${0}" -f $PropertyName
 
         return $Output
     }
@@ -215,14 +211,14 @@ function Get-FunctionParameterText {
 
         $inputProperty = ""
         switch ($ObjectType) {
-            "resource" { 
-                $inputProperty = $TypeDefinition.inputProperties[$ParameterName] 
-            } 
-            "type" { 
+            "resource" {
+                $inputProperty = $TypeDefinition.inputProperties[$ParameterName]
+            }
+            "type" {
                 $inputProperty = $TypeDefinition.properties[$ParameterName]
             }
-            "function" { 
-                $inputProperty = $TypeDefinition.inputs.properties[$ParameterName] 
+            "function" {
+                $inputProperty = $TypeDefinition.inputs.properties[$ParameterName]
             }
         }
 
@@ -246,11 +242,9 @@ function Get-FunctionParameterText {
             if ([string]::IsNullOrEmpty($ref)) {
                 $type = $inputProperty.additionalProperties.type, $inputProperty.oneOf.additionalProperties.type | Where-Object { -not [string]::IsNullOrEmpty($_) }
                 $propertytypestring = $type | Convert-PulumiComplexTypeToPowerShellType
-            }
-            elseif ($ref -imatch '^pulumi.json#/') {
+            } elseif ($ref -imatch '^pulumi.json#/') {
                 $propertytypestring = "[object]"
-            }
-            else {
+            } else {
                 $parts = $ref -split '/'
                 $classObject = $parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -RootModuleFile $RootModuleFile
 
@@ -272,18 +266,16 @@ function Get-FunctionParameterText {
             if ([string]::IsNullOrEmpty($ref)) {
                 $type = $inputProperty.additionalProperties.type, $inputProperty.oneOf.additionalProperties.type
                 $propertytypestring = "[{0}[]]" -f ($type | Convert-PulumiComplexTypeToPowerShellType).trim('[]')
-            }
-            elseif ($ref -imatch '^pulumi.json#/') {
+            } elseif ($ref -imatch '^pulumi.json#/') {
                 $propertytypestring = "[object[]]"
-            }
-            else {
+            } else {
                 $parts = $ref -split '/'
                 $classObject = $parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -RootModuleFile $RootModuleFile
                 $classFQDN = $classObject.module -eq $CurrentModule ? $classObject.Name : "{0}.{1}" -f $classObject.module, $classObject.Name
                 $propertytypestring = "[$classFQDN[]]"
             }
         }
-        
+
         $Output += $propertytypestring
 
         if ($null -ne $inputProperty.oneOf) {
@@ -323,11 +315,11 @@ function Add-ClassDefinitionToModule {
         write-verbose "adding class $pulumitype"
         $ModuleName = $PulumiType | Convert-PulumiNameToModuleName
         $output = @()
-        
+
         $typedefinition = $SchemaObject.types[$PulumiType]
-        
+
         $className = $PulumiType.Split(":")[-1]
-        
+
         if ($script:classesToCreate -icontains $PulumiType) {
             return [pscustomobject]@{
                 name   = $classname
@@ -374,15 +366,15 @@ function Add-FunctionDefinitionToModule {
         write-verbose "adding function $PulumiResource"
         $ModuleName = $PulumiResource | Convert-PulumiNameToModuleName
         $output = @()
-        
+
         $resourcedefinition = $SchemaObject.resources[$PulumiResource]
-        
+
         if ($null -eq $resourcedefinition.inputProperties) {
             Write-Warning "resource $PulumiResource does not have any inputProperties"
             return $null
         }
 
-        $functionName = $PulumiResource -replace '(^|_|:|-)(.)', { $_.Groups[2].Value.ToUpper() } 
+        $functionName = $PulumiResource -replace '(^|_|:|-)(.)', { $_.Groups[2].Value.ToUpper() }
         $functionAlias = ($PulumiResource -replace '-|:', '_').tolower()
 
         if ($script:functionsToCreate -contains $functionName) {
@@ -398,13 +390,24 @@ function Add-FunctionDefinitionToModule {
 
         $Output += "[parameter(mandatory,HelpMessage='The reference to call when you want to make a dependency to another resource')]"
         $Output += "[string]"
-        $Output += "`$pulumiid"
+        $Output += "`$pulumiid,"
+        $Output += "[parameter(mandatory,HelpMessage='Pass in the resources you make to make this resource dependant on')]"
+        $Output += "[object]"
+        $Output += "`$DependsOn"
         $Output += ")"
         $Output += ""
 
         $Output += "process {"
         $Output += "`$resource = [pulumiresource]::new(`$pulumiid, `"$PulumiResource`")"
         $Output += ""
+
+        $Output += "foreach(`$Dependency in `$DependsOn) {"
+        $Output += "if(`$Dependency -is [pulumiresource]) {"
+        $Output += "`$resource.dependson += `$Dependency.Reference()"
+        $Output += "} else {"
+        $Output += "`$resource.dependson += `$Dependency"
+        $Output += "}"
+        $Output += "}"
 
         $resourcedefinition.requiredInputs.where{ -not [string]::IsNullOrEmpty($_) } | ForEach-Object {
             $Output += "`$resource.properties[`"$_`"] = `$$_"
@@ -422,7 +425,7 @@ function Add-FunctionDefinitionToModule {
         $Output += "`$global:pulumiresources += `$resource"
         $Output += "return `$resource"
         $Output += "}"
-    
+
         $output += "}"
 
         $fileContent = $output -join [system.environment]::newline
@@ -452,10 +455,10 @@ function Add-FunctionFunctionDefinitionToModule {
         write-verbose "adding function $PulumiFunction"
         $ModuleName = $PulumiFunction | Convert-PulumiNameToModuleName
         $output = @()
-        
+
         $functiondefinition = $SchemaObject.functions[$PulumiFunction]
 
-        $functionName = $PulumiFunction -replace '(^[^:]*):', '$1Function:' -replace '(^|_|:|-)(.)', { $_.Groups[2].Value.ToUpper() } 
+        $functionName = $PulumiFunction -replace '(^[^:]*):', '$1Function:' -replace '(^|_|:|-)(.)', { $_.Groups[2].Value.ToUpper() }
 
         if ($script:functionsToCreate -contains $functionName) {
             return $functionName
@@ -475,24 +478,24 @@ function Add-FunctionFunctionDefinitionToModule {
 
         $Output += "process {"
         $Output += "`$arguments = @{}"
-        
+
         $functiondefinition.inputs.required.where{ -not [string]::IsNullOrEmpty($_) } | ForEach-Object {
             $Output += "`$arguments[`"$_`"] = `$$_"
         }
-        
+
         $Output += ""
-        
+
         @($functiondefinition.inputs.properties.Keys).where{ $_ -notin $functiondefinition.inputs.required } | ForEach-Object {
             $Output += "if(`$PSBoundParameters.Keys -icontains '$_') {"
             $Output += "`$arguments[`"$_`"] = `$$_"
             $Output += "}"
             $Output += ""
         }
-        
+
         $Output += "`$functionObject = Invoke-PulumiFunction -Name $PulumiFunction -variableName `$([guid]::NewGuid().Guid) -Arguments `$arguments"
         $Output += "return `$functionObject"
         $Output += "}"
-    
+
         $output += "}"
 
         $fileContent = $output -join [system.environment]::newline
@@ -522,15 +525,15 @@ function Add-TypeFunctionDefinitionToModule {
         write-verbose "adding function $PulumiType"
         $ModuleName = $PulumiType | Convert-PulumiNameToModuleName
         $output = @()
-        
+
         $typedefinition = $SchemaObject.types[$PulumiType]
-        
+
         if ($null -eq $typedefinition.properties) {
             Write-Warning "resource $PulumiType does not have any inputProperties"
             return $null
         }
 
-        $functionName = $PulumiType -replace '(^[^:]*):', '$1Type:' -replace '(^|_|:|-)(.)', { $_.Groups[2].Value.ToUpper() } 
+        $functionName = $PulumiType -replace '(^[^:]*):', '$1Type:' -replace '(^|_|:|-)(.)', { $_.Groups[2].Value.ToUpper() }
 
         if ($script:functionsToCreate -contains $functionName) {
             return $functionName
@@ -549,7 +552,7 @@ function Add-TypeFunctionDefinitionToModule {
         $Output += "process {"
         $Output += "return `$([{0}]`$PSBoundParameters)" -f ($PulumiType.Split(":")[-1])
         $Output += "}"
-    
+
         $output += "}"
 
         $fileContent = $output -join [system.environment]::newline
@@ -587,7 +590,7 @@ function New-PSPulumiModuleBundle {
             $ModulePath = Join-Path $OutputDirectory $_.BaseName
             New-Item $ModulePath -ItemType Directory -Force | Out-Null
             Move-Item $_.FullName -Destination $ModulePath
-            
+
             $ManifestFile = Join-Path $ModulePath "$($_.BaseName).psd1"
             $guid = ($_.BaseName | New-ModuleGuid)
             $ModuleManifestParams = @{
@@ -665,7 +668,7 @@ $resourcekeys | ? { $true } | ForEach-Object {
 }
 
 Write-Progress -Activity "Processing resources" -Id 0 -Completed
- 
+
 $i = 0
 $script:classesToCreate | ForEach-Object {
     Write-Progress -Activity "Processing classes" -Id 0 -PercentComplete ($i++ / $script:classesToCreate.count * 100) $_
@@ -688,8 +691,7 @@ $settings = @{
 
 try {
     Import-Module PSScriptAnalyzer -ErrorAction Stop
-}
-catch {
+} catch {
     Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
 }
 

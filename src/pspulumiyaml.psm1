@@ -18,7 +18,15 @@ class pulumiprogram {
             outputs   = $this.outputs
         }
 
-        $this.resources.foreach{ $output.resources[$_.pspuluminame] = $_ | Select-Object -property @{n = "type"; e = { $_.pspulumitype } }, properties }
+        foreach($resource in $this.resources){
+            $output.resources[$resource.pspuluminame] = @{
+                type = $resource.pspulumitype
+                properties = $resource.properties
+                options = @{
+                    dependson = $resource.dependson
+                }
+            }
+        }
 
         return $output | ConvertTo-Json -Depth 99
     }
@@ -28,6 +36,7 @@ class pulumiresource {
     hidden [string] $pspuluminame
     hidden [string] $pspulumitype
     [hashtable] $properties = @{}
+    [string[]] $dependson
 
     pulumiresource($name, $type) {
         $this.pspuluminame = $name
@@ -36,6 +45,10 @@ class pulumiresource {
 
     [string] reference ([string]$PropertyName) {
         return "`${{0}.{1}}".Replace('{0}', $this.pspuluminame).Replace('{1}', $PropertyName)
+    }
+
+    [string] reference () {
+        return "`${{0}}".Replace('{0}', $this.pspuluminame)
     }
 }
 
@@ -196,15 +209,15 @@ function Invoke-PulumiFunction {
         [parameter(mandatory)]
         [string]
         $name,
-        
+
         [parameter(mandatory)]
         [hashtable]
         $arguments,
-        
+
         [parameter()]
         [string]
         $returnproperty,
-        
+
         [parameter(mandatory)]
         [string]
         $variablename
@@ -216,7 +229,7 @@ function Invoke-PulumiFunction {
             Arguments = $arguments
         }
     }
-    
+
     if ($PSBoundParameters.ContainsKey("returnproperty")) {
         $function["Fn::Invoke"]["return"] = $returnproperty
     }
