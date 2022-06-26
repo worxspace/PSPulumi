@@ -52,7 +52,7 @@ pulumi_configuration {
   }
   $null = azure_native_storage_blob @Props
 
-  $keys = Invoke-AzureNativeStorageListStorageAccountKeys -accountName $storageAccount.reference("name") -resourceGroupName $resourceGroup.reference("name")
+  $keys = Invoke-AzureNativeFunctionStorageListStorageAccountKeys -accountName $storageAccount.reference("name") -resourceGroupName $resourceGroup.reference("name")
 
   pulumi_output test $storageAccount.reference("primaryEndpoints.web")
   pulumi_output primarykey $keys.reference("keys[0].value")

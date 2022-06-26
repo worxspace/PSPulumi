@@ -308,8 +308,13 @@ function Invoke-PulumiFunction {
     return [pulumi_variable]::new($variablename, $value)
 }
 
-function New-PulumiYamlFile ([scriptblock]$scriptblock) {
+function New-PulumiYamlFile {
     [Alias("pulumi_configuration")]
+    param (
+        [parameter(Mandatory)]
+        [scriptblock]
+        $scriptblock
+    )
 
     $global:pulumiresources = @()
     $global:outputs = @{}
