@@ -12,7 +12,7 @@
 RootModule = 'pspulumiyaml.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.0.1'
+ModuleVersion = '0.0.3'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -101,7 +101,7 @@ PrivateData = @{
         # LicenseUri = ''
 
         # A URL to the main website for this project.
-        # ProjectUri = ''
+        ProjectUri = 'https://github.com/worxspace/PSPulumiYaml'
 
         # A URL to an icon representing this module.
         # IconUri = ''

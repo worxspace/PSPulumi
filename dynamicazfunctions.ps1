@@ -32,7 +32,12 @@ function Convert-PulumiTypeToPowerShellType {
         [parameter(mandatory, valuefrompipeline)]
         [AllowEmptyString()]
         [string]
-        $Type
+        $Type,
+
+        [parameter()]
+        [AllowEmptyString()]
+        [string]
+        $Description
     )
 
     process {
@@ -47,7 +52,12 @@ function Convert-PulumiTypeToPowerShellType {
                 return "[int]"
             }
             'boolean' {
-                return "[bool]"
+                if ($Description -match 'must not set the property to false') {
+                    return "[Nullable[bool]]"
+                }
+                else {
+                    return "[bool]"
+                }
             }
             'array' {
                 return "[array]"
@@ -112,7 +122,7 @@ function Get-ClassPropertyText {
             return '[object] ${0} #todo add class here' -f $propertyName
         }
 
-        $propertytypestring = Convert-PulumiTypeToPowerShellType -Type "$type"
+        $propertytypestring = Convert-PulumiTypeToPowerShellType -Type "$type" -Description $inputProperty.description
 
         write-verbose "creating class property $PropertyName with initial type $propertytypestring"
 
@@ -121,17 +131,20 @@ function Get-ClassPropertyText {
 
             if ([string]::IsNullOrEmpty($ref)) {
                 $type = $inputProperty.additionalProperties.type, $inputProperty.oneOf.additionalProperties.type, $inputProperty.additionalProperties.'$ref', $inputProperty.oneOf.additionalProperties.'$ref'
-                $propertytypestring = Convert-PulumiTypeToPowerShellType -Type "$type"
-            } elseif ($ref -imatch '^pulumi.json#/') {
+                $propertytypestring = Convert-PulumiTypeToPowerShellType -Type "$type" -Description $inputProperty.description
+            }
+            elseif ($ref -imatch '^pulumi.json#/') {
                 $propertytypestring = "[object]"
-            } else {
+            }
+            else {
                 write-verbose "creating class for object $ref"
                 $parts = $ref -split '/'
                 $refObject = $schema.types[$parts[-1]]
 
                 if ($null -ne $refObject.enum) {
                     $validateset = $refObject.enum.value
-                } else {
+                }
+                else {
                     $classObject = $parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -RootModuleFile $RootModuleFile
                     $classFQDN = $classObject.module -eq $CurrentModule ? $classObject.Name : "{0}.{1}" -f $classObject.module, $classObject.Name
                     $propertytypestring = "[$classFQDN]"
@@ -140,7 +153,7 @@ function Get-ClassPropertyText {
         }
 
         if ($propertytypestring -eq "[array]") {
-            $propertytypestring = "[{0}[]]" -f (Convert-PulumiTypeToPowerShellType -Type $arraytype).trim('[]')
+            $propertytypestring = "[{0}[]]" -f (Convert-PulumiTypeToPowerShellType -Type $arraytype -Description $inputProperty.description).trim('[]')
         }
 
         if ($propertytypestring -eq '[object[]]') {
@@ -149,16 +162,19 @@ function Get-ClassPropertyText {
             if ([string]::IsNullOrEmpty($ref)) {
                 $type = $inputProperty.additionalProperties.type, $inputProperty.oneOf.additionalProperties.type
                 $propertytypestring = "[{0}[]]" -f (Convert-PulumiComplexTypeToPowerShellType -Type "$type").trim('[]')
-            } elseif ($ref -imatch '^pulumi.json#/') {
+            }
+            elseif ($ref -imatch '^pulumi.json#/') {
                 $propertytypestring = "[object[]]"
-            } else {
+            }
+            else {
                 $parts = $ref -split '/'
                 $refObject = $schema.types[$parts[-1]]
 
                 if ($null -ne $refObject.enum) {
-                    $propertytypestring = Convert-PulumiTypeToPowerShellType -Type $refObject.type
+                    $propertytypestring = Convert-PulumiTypeToPowerShellType -Type $refObject.type -Description $inputProperty.description
                     $validateset = $refObject.enum.value
-                } else {
+                }
+                else {
                     $classObject = $parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -RootModuleFile $RootModuleFile
                     $classFQDN = $classObject.module -eq $CurrentModule ? $classObject.Name : "{0}.{1}" -f $classObject.module, $classObject.Name
                     $propertytypestring = "[$classFQDN[]]"
@@ -171,7 +187,7 @@ function Get-ClassPropertyText {
             $refObject = $schema.types[$parts[-1]]
 
             if ($null -ne $refObject.enum) {
-                $propertytypestring = Convert-PulumiTypeToPowerShellType -Type $refObject.type
+                $propertytypestring = Convert-PulumiTypeToPowerShellType -Type $refObject.type -Description $inputProperty.description
                 $validateset = $refObject.enum.value
             }
         }
@@ -234,7 +250,7 @@ function Get-FunctionParameterText {
 
         write-verbose "adding function parameter $ParameterName with initial type $type"
 
-        $propertytypestring = $type | Convert-PulumiTypeToPowerShellType
+        $propertytypestring = $type | Convert-PulumiTypeToPowerShellType -Description $inputProperty.description
 
         if ($propertytypestring -eq "[object]") {
             $ref = $($inputProperty.'$ref', $inputProperty.oneOf.'$ref', $inputProperty.additionalProperties.'$ref', $inputProperty.oneOf.additionalProperties.'$ref' | Where-Object { -not [string]::IsNullOrEmpty($_) })
@@ -242,9 +258,11 @@ function Get-FunctionParameterText {
             if ([string]::IsNullOrEmpty($ref)) {
                 $type = $inputProperty.additionalProperties.type, $inputProperty.oneOf.additionalProperties.type | Where-Object { -not [string]::IsNullOrEmpty($_) }
                 $propertytypestring = $type | Convert-PulumiComplexTypeToPowerShellType
-            } elseif ($ref -imatch '^pulumi.json#/') {
+            }
+            elseif ($ref -imatch '^pulumi.json#/') {
                 $propertytypestring = "[object]"
-            } else {
+            }
+            else {
                 $parts = $ref -split '/'
                 $classObject = $parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -RootModuleFile $RootModuleFile
 
@@ -257,7 +275,7 @@ function Get-FunctionParameterText {
 
         if ($propertytypestring -eq "[array]") {
             write-verbose "adding function parameter $ParameterName with array type $arraytype"
-            $propertytypestring = "[{0}[]]" -f ($arraytype | Convert-PulumiTypeToPowerShellType).trim('[]')
+            $propertytypestring = "[{0}[]]" -f ($arraytype | Convert-PulumiTypeToPowerShellType -Description $inputProperty.description).trim('[]')
         }
 
         if ($propertytypestring -eq '[object[]]') {
@@ -266,9 +284,11 @@ function Get-FunctionParameterText {
             if ([string]::IsNullOrEmpty($ref)) {
                 $type = $inputProperty.additionalProperties.type, $inputProperty.oneOf.additionalProperties.type
                 $propertytypestring = "[{0}[]]" -f ($type | Convert-PulumiComplexTypeToPowerShellType).trim('[]')
-            } elseif ($ref -imatch '^pulumi.json#/') {
+            }
+            elseif ($ref -imatch '^pulumi.json#/') {
                 $propertytypestring = "[object[]]"
-            } else {
+            }
+            else {
                 $parts = $ref -split '/'
                 $classObject = $parts[-1] | Add-ClassDefinitionToModule -SchemaObject $SchemaObject -RootModuleFile $RootModuleFile
                 $classFQDN = $classObject.module -eq $CurrentModule ? $classObject.Name : "{0}.{1}" -f $classObject.module, $classObject.Name
@@ -283,13 +303,13 @@ function Get-FunctionParameterText {
             $refObject = $schema.types[$parts[-1]]
 
             if ($null -ne $refObject.enum) {
-                $propertytypestring = Convert-PulumiTypeToPowerShellType -Type $refObject.type
+                $propertytypestring = Convert-PulumiTypeToPowerShellType -Type $refObject.type -Description $inputProperty.description
                 $validateset = $refObject.enum.value
             }
         }
 
         if ($null -ne $validateset) {
-            $Output += "[ValidateSet({0})]" -f $($validateset.foreach{ "'$_'" } -join ', ')
+            $Output += "[ArgumentCompletions({0})]" -f $($validateset.foreach{ "'$_'" } -join ', ')
         }
 
         $Output += "`${0}," -f $ParameterName
@@ -388,12 +408,66 @@ function Add-FunctionDefinitionToModule {
 
         $Output += $resourcedefinition.inputProperties.Keys | Get-FunctionParameterText -TypeDefinition $resourcedefinition -CurrentModule $ModuleName
 
+        # define pulumiid used for referencing within pulumi state
         $Output += "[parameter(mandatory,HelpMessage='The reference to call when you want to make a dependency to another resource')]"
         $Output += "[string]"
         $Output += "`$pulumiid,"
-        $Output += "[parameter(mandatory,HelpMessage='Pass in the resources you make to make this resource dependant on')]"
+
+        # define resource option params
+        $Output += "[parameter(HelpMessage='Specifies a list of named output properties that should be treated as secrets, which means they will be encrypted. It augments the list of values that Pulumi detects, based on secret inputs to the resource.')]"
+        $Output += "[string[]]"
+        $Output += "`$PulumiSecretOutputs,"
+
+        $Output += "[parameter(HelpMessage='The aliases parameter provides a list of aliases for a resource or component resource. If youre changing the name, type, or parent path of a resource or component resource, you can add the old name to the list of aliases for a resource to ensure that existing resources will be migrated to the new name instead of being deleted and replaced with the new named resource.')]"
+        $Output += "[string[]]"
+        $Output += "`$PulumiAliases,"
+
+        $Output += "[parameter(HelpMessage='The customTimeouts parameter provides a set of custom timeouts for create, update, and delete operations on a resource. These timeouts are specified using a duration string such as 5m (5 minutes), 40s (40 seconds), or 1d (1 day). Supported duration units are ns, us (or µs), ms, s, m, and h (nanoseconds, microseconds, milliseconds, seconds, minutes, and hours, respectively).')]"
+        $Output += "[pulumicustomtimeouts]"
+        $Output += "`$PulumiCustomTimeouts,"
+
+        $Output += "[parameter(HelpMessage='Setting the PulumiDeleteBeforeReplace parameter to true means that Pulumi will delete the existing resource before creating its replacement. Be aware that this behavior has a cascading impact on dependencies so more resources may be replaced, which can lead to downtime. However, this option may be necessary for some resources that manage scarce resources behind the scenes, and/or resources that cannot exist side-by-side.')]"
+        $Output += "[bool]"
+        $Output += "`$PulumiDeleteBeforeReplace,"
+
+        $Output += "[parameter(HelpMessage='Creates a list of explicit dependencies between resources.The DependsOn parameter  ensures that resource creation, update, and deletion operations are done in the correct order.')]"
+        $Output += "[object[]]"
+        $Output += "`$PulumiDependsOn,"
+
+        $Output += "[parameter(HelpMessage='Specifies a list of properties that Pulumi will ignore when it updates existing resources. Any properties specified in this list that are also specified in the resources arguments will only be used when creating the resource.')]"
+        $Output += "[string[]]"
+        $Output += "`$PulumiIgnoreChanges,"
+
+        $Output += "[parameter(HelpMessage='Imports an existing cloud resource so that Pulumi can manage it. To import a resource, first specify the PulumiImport parameter with the resources ID')]"
+        $Output += "[string]"
+        $Output += "`$PulumiImport = [NullString]::Value,"
+
+        $Output += "[parameter(HelpMessage='Specifies a parent for a resource. It is used to associate children with the parents that encapsulate or are responsible for them.')]"
         $Output += "[object]"
-        $Output += "`$DependsOn"
+        $Output += "`$PulumiParent = [NullString]::Value,"
+
+        $Output += "[parameter(HelpMessage='Marks a resource as protected. A protected resource cannot be deleted directly, and it will be an error to do a Pulumi deployment which tries to delete a protected resource for any reason.')]"
+        $Output += "[bool]"
+        $Output += "`$PulumiProtect,"
+        
+        $Output += "[parameter(HelpMessage='Sets a provider for the resource. The default is to inherit this value from the parent resource, and to use the ambient provider specified by Pulumi configuration for resources without a parent.')]"
+        $Output += "[object]"
+        $Output += "`$PulumiProvider = [NullString]::Value,"
+        $Output += "[parameter(HelpMessage='Sets a list of providers for the resource and its children. This list is combined with resource parents providers lists. If no value is provided, the providers list is identical to the parent. When determining which provider to use for a resource, the providers list is used if provider is not supplied.')]"
+        $Output += "[object[]]"
+        $Output += "`$PulumiProviders,"
+
+        $Output += "[parameter(HelpMessage='Used to indicate that changes to certain properties on a resource should force a replacement of the resource instead of an in-place update. Typically users rely on the resource provider to make this decision based on whether the input property is one that the provider knows how to update in place, or if not, requires a replacement to modify. However, there are cases where users want to replace a resource on a change to an input property even if the resource provider itself doesnt believe it has to replace the resource.')]"
+        $Output += "[string[]]"
+        $Output += "`$PulumiReplaceOnChanges,"
+
+        $Output += "[parameter(HelpMessage='Marks a resource to be retained. If this option is set then Pulumi will not call through to the resource providers Delete method when deleting or replacing the resource during pulumi up or pulumi destroy. As a result, the resource will not be deleted from the backing cloud provider, but will be removed from the Pulumi state.')]"
+        $Output += "[bool]"
+        $Output += "`$PulumiRetainOnDelete,"
+
+        $Output += "[parameter(HelpMessage='Specifies a provider version to use when operating on a resource. This version overrides the version information inferred from the current package. This option should be used rarely.')]"
+        $Output += "[string]"
+        $Output += "`$PulumiProviderVersion = [NullString]::Value"
         $Output += ")"
         $Output += ""
 
@@ -401,12 +475,45 @@ function Add-FunctionDefinitionToModule {
         $Output += "`$resource = [pulumiresource]::new(`$pulumiid, `"$PulumiResource`")"
         $Output += ""
 
+        $Output += "`$resource.options.additionalSecretOutputs = `$PulumiSecretOutputs"
+        $Output += "`$resource.options.aliases = `$PulumiAliases"
+        $Output += "`$resource.options.customTimeouts = `$PulumiCustomTimeouts"
+        $Output += "`$resource.options.deleteBeforeReplace = `$PulumiDeleteBeforeReplace"
+        $Output += "`$resource.options.ignoreChanges = `$PulumiIgnoreChanges"
+        $Output += "`$resource.options.import = if([string]::IsNullOrEmpty(`$PulumiImport)) { [NullString]::Value } else { `$PulumiImport }"
+        $Output += "`$resource.options.protect = `$PulumiProtect"
+        $Output += "`$resource.options.replaceOnChanges = `$PulumiReplaceOnChanges"
+        $Output += "`$resource.options.retainOnDelete = `$PulumiRetainOnDelete"
+        $Output += "`$resource.options.version = if([string]::IsNullOrEmpty(`$PulumiProviderVersion)) { [NullString]::Value } else { `$PulumiProviderVersion }"
+        $Output += ""
+
+
         $Output += "foreach(`$Dependency in `$DependsOn) {"
         $Output += "if(`$Dependency -is [pulumiresource]) {"
-        $Output += "`$resource.dependson += `$Dependency.Reference()"
+        $Output += "`$resource.options.dependson += `$Dependency.Reference()"
         $Output += "} else {"
-        $Output += "`$resource.dependson += `$Dependency"
+        $Output += "`$resource.options.dependson += `$Dependency"
         $Output += "}"
+        $Output += "}"
+
+        $Output += "if(`$PulumiParent -is [pulumiresource]) {"
+        $Output += "`$resource.options.parent = `$PulumiParent.Reference()"
+        $Output += "} else {"
+        $Output += "`$resource.options.parent = `$PulumiParent"
+        $Output += "}"
+
+        $Output += "foreach(`$provider in `$PulumiProviders) {"
+        $Output += "if(`$provider -is [pulumiprovider]) {"
+        $Output += "`$resource.options.providers += `$provider.Reference()"
+        $Output += "} else {"
+        $Output += "`$resource.options.providers += `$provider"
+        $Output += "}"
+        $Output += "}"
+
+        $Output += "if(`$PulumiProvider -is [pulumiprovider]) {"
+        $Output += "`$resource.options.provider = `$PulumiProvider.Reference()"
+        $Output += "} else {"
+        $Output += "`$resource.options.provider = `$PulumiProvider"
         $Output += "}"
 
         $resourcedefinition.requiredInputs.where{ -not [string]::IsNullOrEmpty($_) } | ForEach-Object {
@@ -585,7 +692,9 @@ function New-PSPulumiModuleBundle {
     )
 
     process {
-        $Modules = @("PSPulumiYaml")
+        $pspulumimoduledef = @{ ModuleName = "PSPulumiYaml"; ModuleVersion = "0.0.3"; GUID = '909344e0-a08f-45f6-8177-80e36bb2ba58' }
+
+        $Modules = @( $pspulumimoduledef)
         Get-ChildItem $OutputDirectory | ForEach-Object {
             $ModulePath = Join-Path $OutputDirectory $_.BaseName
             New-Item $ModulePath -ItemType Directory -Force | Out-Null
@@ -601,7 +710,7 @@ function New-PSPulumiModuleBundle {
                 CompanyName     = 'Worxspace'
                 Guid            = $guid
                 ModuleVersion   = $Version
-                RequiredModules = @("PSPulumiYaml")
+                RequiredModules = @( $pspulumimoduledef)
             }
 
             if ($Prerelease.Length -gt 1) {
@@ -628,6 +737,7 @@ function New-PSPulumiModuleBundle {
             Guid            = $guid
             ModuleVersion   = $Version
             RequiredModules = $Modules
+            ProjectUri      = 'https://github.com/worxspace/PSPulumiYaml'
         }
 
         if ($Prerelease.Length -gt 1) {
@@ -691,16 +801,17 @@ $settings = @{
 
 try {
     Import-Module PSScriptAnalyzer -ErrorAction Stop
-} catch {
+}
+catch {
     Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
 }
 
 #loop all module files
 Get-ChildItem (Split-Path $RootModule) | ForEach-Object {
     $Content = (Get-Content $_.FullName -Raw)
-    $newContent = 'using module pspulumiyaml' + [System.Environment]::newline + $Content
+    $newContent = 'using module @{ ModuleName = "PSPulumiYaml"; ModuleVersion = "0.0.3"; GUID = "909344e0-a08f-45f6-8177-80e36bb2ba58" }' + [System.Environment]::newline + $Content
 
     Invoke-Formatter -ScriptDefinition $newContent -Settings $settings | Set-Content $_.FullName -Force
 }
 
-New-PSPulumiModuleBundle -OutputDirectory $OutputDirectory -RootModuleName $RootModuleName -Version '0.0.2'
+New-PSPulumiModuleBundle -OutputDirectory $OutputDirectory -RootModuleName $RootModuleName -Version '0.0.4'
