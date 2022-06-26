@@ -1,5 +1,5 @@
 class pulumiprogram {
-    [pulumiresource[]] $resources
+    [pulumibaseresource[]] $resources
 
     [hashtable] $variables
 
@@ -18,13 +18,13 @@ class pulumiprogram {
             outputs   = $this.outputs
         }
 
-        foreach($resource in $this.resources){
+        foreach ($resource in $this.resources) {
+            $validoptions = $resource.options.PSObject.Properties.where{ $null -ne $_.Value }.Name
+            $validproperties = $resource.properties.Keys.where{ $null -ne $resource.properties.$_ }
             $output.resources[$resource.pspuluminame] = @{
-                type = $resource.pspulumitype
-                properties = $resource.properties
-                options = @{
-                    dependson = $resource.dependson
-                }
+                type       = $resource.pspulumitype
+                properties = [PSCustomObject]($resource.properties) | Select-Object -Property $validproperties
+                options    = $resource.options | Select-Object -Property $validoptions
             }
         }
 
@@ -32,13 +32,35 @@ class pulumiprogram {
     }
 }
 
-class pulumiresource {
+class pulumicustomtimeouts {
+    [string] $create
+    [string] $delete
+    [string] $update
+}
+
+class pulumiresourceoptions {
+    [string[]] $additionalSecretOutputs
+    [string[]] $aliases
+    [pulumicustomtimeouts] $customTimeouts
+    [bool] $deleteBeforeReplace
+    [string[]] $dependsOn
+    [string[]] $ignoreChanges
+    [string] $import = [NullString]::Value
+    [string] $parent = [NullString]::Value
+    [bool] $protect
+    [string] $provider = [NullString]::Value
+    [pulumiprovider[]] $providers
+    [string[]] $replaceOnChanges
+    [bool] $retainOnDelete
+    [string] $version = [NullString]::Value
+}
+
+class pulumibaseresource {
     hidden [string] $pspuluminame
     hidden [string] $pspulumitype
     [hashtable] $properties = @{}
-    [string[]] $dependson
 
-    pulumiresource($name, $type) {
+    pulumibaseresource($name, $type) {
         $this.pspuluminame = $name
         $this.pspulumitype = $type
     }
@@ -50,6 +72,54 @@ class pulumiresource {
     [string] reference () {
         return "`${{0}}".Replace('{0}', $this.pspuluminame)
     }
+}
+
+class pulumiresource : pulumibaseresource {
+    hidden [string] $pspuluminame
+    hidden [string] $pspulumitype
+    [hashtable] $properties = @{}
+    [pulumiresourceoptions] $options = [pulumiresourceoptions]::new()
+
+    pulumiresource($name, $type) : base($name, $type) {}
+
+    [string] reference ([string]$PropertyName) {
+        return "`${{0}.{1}}".Replace('{0}', $this.pspuluminame).Replace('{1}', $PropertyName)
+    }
+
+    [string] reference () {
+        return "`${{0}}".Replace('{0}', $this.pspuluminame)
+    }
+}
+
+class pulumiprovider : pulumibaseresource {
+    pulumiprovider($name, $type) {
+        $this.pspuluminame = $name
+        $this.pspulumitype = "pulumi:providers:" + ($type -replace '^pulumi:providers:')
+    }
+}
+
+function New-PulumiProvider {
+    [Alias("pulumi_provider")]
+    param (
+        [parameter(mandatory = $true)]
+        [string]
+        $pulumiid,
+
+        [parameter(mandatory = $true)]
+        [string]
+        $type,
+
+        [parameter(mandatory = $true)]
+        [hashtable]
+        $properties
+    )
+
+    $provider = [pulumiprovider]::new($pulumiid, $type)
+
+    $provider.properties = $properties
+
+    $global:pulumiresources += $provider
+    return $provider
 }
 
 function New-PulumiGenericResource {

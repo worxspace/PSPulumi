@@ -25,7 +25,7 @@ RUN apk -X https://dl-cdn.alpinelinux.org/alpine/edge/main add --no-cache \
     lttng-ust
 
 # Download the powershell '.tar.gz' archive
-RUN curl -L https://github.com/PowerShell/PowerShell/releases/download/v7.2.4/powershell-7.2.4-linux-alpine-x64.tar.gz -o /tmp/powershell.tar.gz
+RUN curl -L https://github.com/PowerShell/PowerShell/releases/download/v7.2.5/powershell-7.2.5-linux-alpine-x64.tar.gz -o /tmp/powershell.tar.gz
 
 # Create the target folder where powershell will be placed
 RUN mkdir -p /opt/microsoft/powershell/7
@@ -40,7 +40,7 @@ RUN chmod +x /opt/microsoft/powershell/7/pwsh
 RUN ln -s /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh
 
 # Download the pulumi '.tar.gz' archive
-RUN curl -fsSL https://get.pulumi.com/releases/sdk/pulumi-v3.33.2-linux-x64.tar.gz  -o /tmp/pulumi.tar.gz
+RUN curl -fsSL https://get.pulumi.com/releases/sdk/pulumi-v3.35.1-linux-x64.tar.gz  -o /tmp/pulumi.tar.gz
 
 # Create the target folder where pulumi will be placed
 RUN mkdir -p /opt/pulumi
