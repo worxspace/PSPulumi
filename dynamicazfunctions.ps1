@@ -744,6 +744,10 @@ function New-PSPulumiModuleBundle {
             $ModuleManifestParams['Prerelease'] = $Prerelease
         }
         New-ModuleManifest @ModuleManifestParams
+
+        $LicenseFile = Join-Path $ModulePath "LICENSE"
+        Copy-Item -Path "$PSScriptRoot/scaffolding/LICENSE" -Destination $LicenseFile | Out-Null
+        (Get-Content -Path $LicenseFile).Replace('<MODULENAME>', $RootModuleName).Replace('<DESCRIPTION>', 'A module providing functionality to be used in conjunction with PSPulumiYAML') | Set-Content -Path $LicenseFile
     }
 }
 
